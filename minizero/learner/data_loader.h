@@ -28,6 +28,9 @@ public:
     float* value_;
     float* reward_;
     float* loss_scale_;
+    float* anchor_;
+    float* positive_;
+    float* negative_;
     int* sampled_index_;
 };
 
@@ -76,8 +79,13 @@ protected:
     virtual bool addEnvironmentLoader();
     virtual bool sampleData();
 
+    virtual void setIIGTrainingData(int batch_index);
     virtual void setAlphaZeroTrainingData(int batch_index);
     virtual void setMuZeroTrainingData(int batch_index);
+
+    std::vector<float> getAnchor(int env_id, int pos, utils::Rotation rotation);
+    std::vector<float> getPositive(int env_id, int pos, utils::Rotation rotation);
+    std::vector<float> getNegative(int env_id, int pos, utils::Rotation rotation);
 
     inline std::shared_ptr<DataLoaderSharedData> getSharedData() { return std::static_pointer_cast<DataLoaderSharedData>(shared_data_); }
 };

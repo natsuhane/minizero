@@ -80,5 +80,13 @@ PYBIND11_MODULE(minizero_py, m)
                 data_loader.getSharedData()->getDataPtr()->sampled_index_ = static_cast<int*>(sampled_index.request().ptr);
                 data_loader.sampleData();
             },
+            py::call_guard<py::gil_scoped_release>())
+        .def(
+            "sample_iig_data", [](learner::DataLoader& data_loader, py::array_t<float>& anchor, py::array_t<float>& positive, py::array_t<float>& negative) {
+                data_loader.getSharedData()->getDataPtr()->anchor_ = static_cast<float*>(anchor.request().ptr);
+                data_loader.getSharedData()->getDataPtr()->positive_ = static_cast<float*>(positive.request().ptr);
+                data_loader.getSharedData()->getDataPtr()->negative_ = static_cast<float*>(negative.request().ptr);
+                data_loader.sampleData();
+            },
             py::call_guard<py::gil_scoped_release>());
 }

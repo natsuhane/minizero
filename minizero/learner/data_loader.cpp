@@ -120,7 +120,9 @@ bool DataLoaderThread::sampleData()
     int batch_index = getSharedData()->getNextBatchIndex();
     if (batch_index >= config::learner_batch_size) { return false; }
 
-    if (config::nn_type_name == "alphazero") {
+    if (config::nn_type_name == "siamese") {
+        setIIGTrainingData(batch_index);
+    } else if (config::nn_type_name == "alphazero") {
         setAlphaZeroTrainingData(batch_index);
     } else if (config::nn_type_name == "muzero") {
         setMuZeroTrainingData(batch_index);
@@ -129,6 +131,24 @@ bool DataLoaderThread::sampleData()
     }
 
     return true;
+}
+
+void DataLoaderThread::setIIGTrainingData(int batch_index)
+{
+    // random pickup one position
+    std::pair<int, int> p = getSharedData()->replay_buffer_.sampleEnvAndPos();
+    int env_id = p.first, pos = p.second;
+
+    // IIG training data
+    Rotation rotation = static_cast<Rotation>(Random::randInt() % static_cast<int>(Rotation::kRotateSize));
+    std::vector<float> anchor = getAnchor(env_id, pos, rotation);
+    std::vector<float> positive = getPositive(env_id, pos, rotation);
+    std::vector<float> negative = getNegative(env_id, pos, rotation);
+
+    // write data to data_ptr
+    std::copy(anchor.begin(), anchor.end(), getSharedData()->getDataPtr()->anchor_ + anchor.size() * batch_index);
+    std::copy(positive.begin(), positive.end(), getSharedData()->getDataPtr()->positive_ + positive.size() * batch_index);
+    std::copy(negative.begin(), negative.end(), getSharedData()->getDataPtr()->negative_ + negative.size() * batch_index);
 }
 
 void DataLoaderThread::setAlphaZeroTrainingData(int batch_index)
@@ -197,6 +217,31 @@ void DataLoaderThread::setMuZeroTrainingData(int batch_index)
     std::copy(policy.begin(), policy.end(), getSharedData()->getDataPtr()->policy_ + policy.size() * batch_index);
     std::copy(value.begin(), value.end(), getSharedData()->getDataPtr()->value_ + value.size() * batch_index);
     std::copy(reward.begin(), reward.end(), getSharedData()->getDataPtr()->reward_ + reward.size() * batch_index);
+}
+
+std::vector<float> DataLoaderThread::getAnchor(int env_id, int pos, utils::Rotation rotation)
+{
+    // TODO: a placeholder implementation
+    // TODO: declare Env => act pos => anchor, positive, negative?
+    const EnvironmentLoader& env_loader = getSharedData()->replay_buffer_.env_loaders_[env_id];
+    std::vector<float> features = env_loader.getFeatures(pos, rotation);
+    return features;
+}
+
+std::vector<float> DataLoaderThread::getPositive(int env_id, int pos, utils::Rotation rotation)
+{
+    // TODO: a placeholder implementation
+    const EnvironmentLoader& env_loader = getSharedData()->replay_buffer_.env_loaders_[env_id];
+    std::vector<float> features = env_loader.getFeatures(pos, rotation);
+    return features;
+}
+
+std::vector<float> DataLoaderThread::getNegative(int env_id, int pos, utils::Rotation rotation)
+{
+    // TODO: a placeholder implementation
+    const EnvironmentLoader& env_loader = getSharedData()->replay_buffer_.env_loaders_[env_id];
+    std::vector<float> features = env_loader.getFeatures(pos, rotation);
+    return features;
 }
 
 DataLoader::DataLoader(const std::string& conf_file_name)

@@ -1,3 +1,21 @@
+# PhantomGo branch
+## Train siamese
+* Start a container first: `./scripts/start-container.sh`
+* `./scripts/train-siamese.sh go [config file] [end iteration] --link_sgf [sgf folder]`
+  * Example: `./scripts/train-siamese.sh go go.cfg 300 --link_sgf sgf`
+  * Do op only
+  * For more arguments, see `./scripts/train-siamese.sh`
+  * `--link_sgf`: Copy the sgf folder to training folder
+  ```
+  /sgf
+  --1.sgf
+  --2.sgf
+  .
+  .
+  .
+  // Each .sgf file has lots of game records
+  ```
+
 # MiniZero
 
 MiniZero is a zero-knowledge learning framework that supports AlphaZero, MuZero, Gumbel AlphaZero, and Gumbel MuZero algorithms.
