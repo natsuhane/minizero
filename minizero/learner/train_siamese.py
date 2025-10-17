@@ -13,17 +13,36 @@ from tools.analysis import analysis
 def eprint(*args, **kwargs):
     print(*args, file=sys.stderr, **kwargs, flush=True)
 
+class TripletLoss(nn.Module):
+    """
+    Triplet Loss with margin
+    L = max(0, d(a,p) - d(a,n) + margin)
+    """
+    def __init__(self, margin=1.0):
+        super().__init__()
+        self.margin = margin
 
-class MinizeroDadaLoader:
+    def forward(self, anchor_emb, positive_emb, negative_emb):
+        d_ap = torch.norm(anchor_emb - positive_emb, dim=1)
+        d_an = torch.norm(anchor_emb - negative_emb, dim=1)
+        loss = torch.relu(self.margin + d_ap - d_an)
+        return loss.mean()
+
+
+class MinizeroDataLoader:
     def __init__(self, conf_file_name):
         self.data_loader = py.DataLoader(conf_file_name)
         self.data_loader.initialize()
         self.data_list = []
 
         # allocate memory
-        self.anchor = np.zeros(py.get_batch_size() * py.get_nn_num_input_channels() * py.get_nn_input_channel_height() * py.get_nn_input_channel_width(), dtype=np.float32)
-        self.positive = np.zeros(py.get_batch_size() * py.get_nn_num_input_channels() * py.get_nn_input_channel_height() * py.get_nn_input_channel_width(), dtype=np.float32)
-        self.negative = np.zeros(py.get_batch_size() * py.get_nn_num_input_channels() * py.get_nn_input_channel_height() * py.get_nn_input_channel_width(), dtype=np.float32)
+
+        self.anchor_channels = 72
+        self.board_channels = 2
+
+        self.anchor = np.zeros(py.get_batch_size() * self.anchor_channels * py.get_nn_input_channel_height() * py.get_nn_input_channel_width(), dtype=np.float32)
+        self.positive = np.zeros(py.get_batch_size() * self.board_channels * py.get_nn_input_channel_height() * py.get_nn_input_channel_width(), dtype=np.float32)
+        self.negative = np.zeros(py.get_batch_size() * self.board_channels * py.get_nn_input_channel_height() * py.get_nn_input_channel_width(), dtype=np.float32)
 
     def load_data(self, training_dir, start_iter, end_iter):
         for i in range(start_iter, end_iter + 1):
@@ -37,9 +56,9 @@ class MinizeroDadaLoader:
 
     def sample_data(self, device='cpu'):
         self.data_loader.sample_iig_data(self.anchor, self.positive, self.negative)
-        anchor = torch.FloatTensor(self.anchor).view(py.get_batch_size(), py.get_nn_num_input_channels(), py.get_nn_input_channel_height(), py.get_nn_input_channel_width()).to(device)
-        positive = torch.FloatTensor(self.positive).view(py.get_batch_size(), py.get_nn_num_input_channels(), py.get_nn_input_channel_height(), py.get_nn_input_channel_width()).to(device)
-        negative = torch.FloatTensor(self.negative).view(py.get_batch_size(), py.get_nn_num_input_channels(), py.get_nn_input_channel_height(), py.get_nn_input_channel_width()).to(device)
+        anchor = torch.FloatTensor(self.anchor).view(py.get_batch_size(), self.anchor_channels, py.get_nn_input_channel_height(), py.get_nn_input_channel_width()).to(device)
+        positive = torch.FloatTensor(self.positive).view(py.get_batch_size(), self.board_channels, py.get_nn_input_channel_height(), py.get_nn_input_channel_width()).to(device)
+        negative = torch.FloatTensor(self.negative).view(py.get_batch_size(), self.board_channels, py.get_nn_input_channel_height(), py.get_nn_input_channel_width()).to(device)
 
         return anchor, positive, negative
 
@@ -51,11 +70,13 @@ class Model:
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         self.optimizer = None
         self.scheduler = None
+        self.loss_fn = TripletLoss(margin=1.0)
 
     def load_model(self, training_dir, model_file):
         self.training_step = 0
+        anchor_channels = 72
         self.network = create_network(py.get_game_name(),
-                                      py.get_nn_num_input_channels(),
+                                      anchor_channels,  # Use 72 for anchor input channels
                                       py.get_nn_input_channel_height(),
                                       py.get_nn_input_channel_width(),
                                       py.get_nn_num_hidden_channels(),
@@ -122,23 +143,42 @@ def train(model, training_dir, data_loader, start_iter, end_iter):
         model.optimizer.zero_grad()
         anchor, positive, negative = data_loader.sample_data(model.device)
 
-        # TODO: add loss for siamese network training
+        anchor_emb, positive_emb, negative_emb = model.network(anchor, positive, negative)
+        
+        loss = model.loss_fn(anchor_emb, positive_emb, negative_emb)
+        
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_(model.network.parameters(), max_norm=1.0)
+        model.optimizer.step()
+        model.scheduler.step()
 
-        # loss.backward()
-        # model.optimizer.step()
-        # model.scheduler.step()
+        model.training_step += 1
+        add_training_info(training_info, 'triplet_loss', loss.item())
+        
+        # Compute distance metrics
+        with torch.no_grad():
+            d_ap = torch.norm(anchor_emb - positive_emb, dim=1).mean().item()
+            d_an = torch.norm(anchor_emb - negative_emb, dim=1).mean().item()
+            add_training_info(training_info, 'dist_ap', d_ap)
+            add_training_info(training_info, 'dist_an', d_an)
+        
+        if model.training_step != 0 and model.training_step % py.get_training_display_step() == 0:
+            eprint("[{}] nn step {}, lr: {}.".format(
+                time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()), 
+                model.training_step, 
+                round(model.optimizer.param_groups[0]["lr"], 6)
+            ))
+            for loss_key in training_info:
+                eprint("\t{}: {}".format(
+                    loss_key, 
+                    round(training_info[loss_key] / py.get_training_display_step(), 5)
+                ))
+            training_info = {}
 
-        # model.training_step += 1
-        # if model.training_step != 0 and model.training_step % py.get_training_display_step() == 0:
-        #     eprint("[{}] nn step {}, lr: {}.".format(time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()), model.training_step, round(model.optimizer.param_groups[0]["lr"], 6)))
-        #     for loss in training_info:
-        #         eprint("\t{}: {}".format(loss, round(training_info[loss] / py.get_training_display_step(), 5)))
-        #     training_info = {}
-
-    # model.save_model(training_dir)
-    # print("Optimization_Done", model.training_step, flush=True)
-    # eprint("Optimization_Done", model.training_step)
-    # analysis(training_dir, "analysis")
+    model.save_model(training_dir)
+    print("Optimization_Done", model.training_step, flush=True)
+    eprint("Optimization_Done", model.training_step)
+    analysis(training_dir, "analysis")
 
 
 if __name__ == '__main__':
@@ -155,7 +195,7 @@ if __name__ == '__main__':
         exit(0)
 
     py.load_config_file(conf_file_name)
-    data_loader = MinizeroDadaLoader(conf_file_name)
+    data_loader = MinizeroDataLoader(conf_file_name)
     model = Model()
 
     while True:
