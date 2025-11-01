@@ -1,6 +1,13 @@
 # PhantomGo branch
 ## Train siamese
 * Start a container first: `./scripts/start-container.sh`
+* `./scripts/zero-server.sh go [config file] [end iteration] --link_sgf [sgf folder] --op_executable_file minizero/learner/train_siamese.py`
+  * Example: `./scripts/zero-server.sh go go.cfg 300 --link_sgf sgf --op_executable_file minizero/learner/train_siamese.py -g 0 -conf_str learner_batch_size=16`
+* `./scripts/zero-worker.sh go [host] [port] op --op_executable_file minizero/learner/train_siamese.py`
+  * Example: `./scripts/zero-worker.sh go localhost 9999 op --op_executable_file minizero/learner/train_siamese.py`
+  * PORT: see `zero_server_port`
+
+## To be completed
 * `./scripts/train-siamese.sh go [config file] [end iteration] --link_sgf [sgf folder]`
   * Example: `./scripts/train-siamese.sh go go.cfg 300 --link_sgf sgf`
   * Do op only

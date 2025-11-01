@@ -13,11 +13,13 @@ from tools.analysis import analysis
 def eprint(*args, **kwargs):
     print(*args, file=sys.stderr, **kwargs, flush=True)
 
+
 class TripletLoss(nn.Module):
     """
     Triplet Loss with margin
     L = max(0, d(a,p) - d(a,n) + margin)
     """
+
     def __init__(self, margin=1.0):
         super().__init__()
         self.margin = margin
@@ -144,9 +146,9 @@ def train(model, training_dir, data_loader, start_iter, end_iter):
         anchor, positive, negative = data_loader.sample_data(model.device)
 
         anchor_emb, positive_emb, negative_emb = model.network(anchor, positive, negative)
-        
+
         loss = model.loss_fn(anchor_emb, positive_emb, negative_emb)
-        
+
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.network.parameters(), max_norm=1.0)
         model.optimizer.step()
@@ -154,23 +156,23 @@ def train(model, training_dir, data_loader, start_iter, end_iter):
 
         model.training_step += 1
         add_training_info(training_info, 'triplet_loss', loss.item())
-        
+
         # Compute distance metrics
         with torch.no_grad():
             d_ap = torch.norm(anchor_emb - positive_emb, dim=1).mean().item()
             d_an = torch.norm(anchor_emb - negative_emb, dim=1).mean().item()
             add_training_info(training_info, 'dist_ap', d_ap)
             add_training_info(training_info, 'dist_an', d_an)
-        
+
         if model.training_step != 0 and model.training_step % py.get_training_display_step() == 0:
             eprint("[{}] nn step {}, lr: {}.".format(
-                time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()), 
-                model.training_step, 
+                time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
+                model.training_step,
                 round(model.optimizer.param_groups[0]["lr"], 6)
             ))
             for loss_key in training_info:
                 eprint("\t{}: {}".format(
-                    loss_key, 
+                    loss_key,
                     round(training_info[loss_key] / py.get_training_display_step(), 5)
                 ))
             training_info = {}

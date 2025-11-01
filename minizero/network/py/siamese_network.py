@@ -3,12 +3,14 @@ import torch.nn as nn
 import torch.nn.functional as F
 from .network_unit import ResidualBlock, PolicyNetwork, ValueNetwork, DiscreteValueNetwork
 
+
 def conv_block(in_ch, out_ch, k=3, s=1, p=1):
     return nn.Sequential(
         nn.Conv2d(in_ch, out_ch, kernel_size=k, stride=s, padding=p, bias=False),
         nn.BatchNorm2d(out_ch),
         nn.ReLU(inplace=True),
     )
+
 
 class PhantomGoSiamese(nn.Module):
     """
@@ -17,6 +19,7 @@ class PhantomGoSiamese(nn.Module):
     - board_encoder: encodes board state (2 x N x N)
     Both produce L2-normalized embeddings in a shared space.
     """
+
     def __init__(self, obs_in_channels: int, board_in_channels: int = 2, embed_dim: int = 512):
         super().__init__()
         self.obs_in_channels = obs_in_channels
@@ -68,7 +71,7 @@ class PhantomGoSiamese(nn.Module):
         """
         x = self.anchor_feat(anchor)
         x = self.anchor_head(x)
-        x = F.normalize(x, p=2, dim=1)
+        x = F.normalize(x, p=2.0, dim=1)
         return x
 
     def encode_board(self, board: torch.Tensor) -> torch.Tensor:
@@ -81,7 +84,7 @@ class PhantomGoSiamese(nn.Module):
         """
         x = self.board_feat(board)
         x = self.board_head(x)
-        x = F.normalize(x, p=2, dim=1)
+        x = F.normalize(x, p=2.0, dim=1)
         return x
 
     def forward(self, anchor, positive, negative):
@@ -111,11 +114,11 @@ class PhantomGoSiamese(nn.Module):
         """
         B, K = boards.shape[0], boards.shape[1]
         anc_emb = self.encode_anchor(anchor)  # (B, D)
-        
+
         # Flatten and encode all boards
         boards_flat = boards.view(B * K, *boards.shape[2:])
         brd_emb = self.encode_board(boards_flat).view(B, K, -1)  # (B, K, D)
-        
+
         # Compute L2 distances
         anc_exp = anc_emb.unsqueeze(1).expand_as(brd_emb)  # (B, K, D)
         distances = torch.norm(anc_exp - brd_emb, dim=2)   # (B, K)
@@ -149,7 +152,6 @@ class SiameseNetwork(nn.Module):
         self.input_channel_width = input_channel_width
         self.num_hidden_channels = num_hidden_channels
         self.num_blocks = num_blocks
-
 
         self.network = PhantomGoSiamese(
             obs_in_channels=num_input_channels,

@@ -10,6 +10,12 @@ __pycache__
 *_gaz_*/
 *_mz_*/
 *_gmz_*/
+*_sz_*/
+*-siamese-*/
+
+# sgf files
+*.sgf
+sgf/
 
 # others
 .vscode

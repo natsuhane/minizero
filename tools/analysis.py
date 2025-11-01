@@ -170,6 +170,11 @@ def analysis_(dir, path, iter, all: bool = False, name: bool = False):
         return
     plt.rcParams.update({'font.size': 30})
     fig, axs = plt.subplots(1, counter_subplot, figsize=(190, 30))
+
+    # If only one subplot, turn axs into a list
+    if counter_subplot == 1:
+        axs = [axs]
+
     counter_fig = 0
     for item in Fig_list:
         fig_one = plt.figure(figsize=(25, 20))
