@@ -159,10 +159,22 @@ def train(model, training_dir, data_loader, start_iter, end_iter):
 
         # Compute distance metrics
         with torch.no_grad():
-            d_ap = torch.norm(anchor_emb - positive_emb, dim=1).mean().item()
-            d_an = torch.norm(anchor_emb - negative_emb, dim=1).mean().item()
-            add_training_info(training_info, 'dist_ap', d_ap)
-            add_training_info(training_info, 'dist_an', d_an)
+            d_ap = torch.norm(anchor_emb - positive_emb, dim=1)
+            d_an = torch.norm(anchor_emb - negative_emb, dim=1)
+
+            # distance difference
+            margin = d_an - d_ap
+            add_training_info(training_info, 'margin', margin.mean().item())
+
+            success_rate = (margin > model.loss_fn.margin).float().mean().item()
+
+            # Success rate (margin > 1.0)
+            add_training_info(training_info, 'success_rate', success_rate)
+
+            add_training_info(training_info, 'dist_ap', d_ap.mean().item())
+            add_training_info(training_info, 'dist_an', d_an.mean().item())
+            add_training_info(training_info, 'dist_ap_std', d_ap.std().item())
+            add_training_info(training_info, 'dist_an_std', d_an.std().item())
 
         if model.training_step != 0 and model.training_step % py.get_training_display_step() == 0:
             eprint("[{}] nn step {}, lr: {}.".format(

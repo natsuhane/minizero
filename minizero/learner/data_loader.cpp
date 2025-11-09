@@ -1,18 +1,18 @@
 #include "data_loader.h"
 #include "configuration.h"
 #include "environment.h"
+#include "go.h"
 #include "random.h"
 #include "rotation.h"
-#include "go.h"
 #include <algorithm>
-#include <iostream>
+#include <deque>
 #include <fstream>
+#include <iostream>
+#include <numeric>
+#include <set>
+#include <unordered_set>
 #include <utility>
 #include <vector>
-#include <unordered_set>
-#include <set>
-#include <numeric>
-#include <deque>
 
 namespace minizero::learner {
 
@@ -41,33 +41,35 @@ struct SeqState {
 
 // Core Helper Functions (for generating the infomation set)
 
-GoEnv rebuildGoEnvToStep(const EnvironmentLoader& env_loader, int target_pos) {
+GoEnv rebuildGoEnvToStep(const EnvironmentLoader& env_loader, int target_pos)
+{
     const int board_size = env_loader.getBoardSize();
     GoEnv env(board_size);
-    
+
     const auto& action_pairs = env_loader.getActionPairs();
     int end_pos = std::min(target_pos, static_cast<int>(action_pairs.size()));
-    
+
     for (int i = 0; i < end_pos; ++i) {
         if (!env.act(action_pairs[i].first)) {
             std::cerr << "Error: Failed to apply action at step " << i << std::endl;
             break;
         }
     }
-    
+
     return env;
 }
 
-std::vector<GoEnv> rebuildFullHistory(const EnvironmentLoader& env_loader, int target_pos) {
+std::vector<GoEnv> rebuildFullHistory(const EnvironmentLoader& env_loader, int target_pos)
+{
     const int board_size = env_loader.getBoardSize();
     const auto& action_pairs = env_loader.getActionPairs();
-    
+
     std::vector<GoEnv> history;
     history.reserve(target_pos + 1);
-    
+
     GoEnv env(board_size);
-    history.push_back(env);  // Initial state
-    
+    history.push_back(env); // Initial state
+
     int end_pos = std::min(target_pos, static_cast<int>(action_pairs.size()));
     for (int i = 0; i < end_pos; ++i) {
         if (!env.act(action_pairs[i].first)) {
@@ -76,11 +78,12 @@ std::vector<GoEnv> rebuildFullHistory(const EnvironmentLoader& env_loader, int t
         }
         history.push_back(env);
     }
-    
+
     return history;
 }
 
-MoveInfo analyzeMove(const GoEnv& before, const GoEnv& after, const GoAction& action) {
+MoveInfo analyzeMove(const GoEnv& before, const GoEnv& after, const GoAction& action)
+{
     MoveInfo info;
     info.legal = true;
 
@@ -95,7 +98,7 @@ MoveInfo analyzeMove(const GoEnv& before, const GoEnv& after, const GoAction& ac
         removed.reset(pos);
         info.captured_stones.push_back(pos);
     }
-    
+
     return info;
 }
 
@@ -111,16 +114,17 @@ std::vector<MoveEvent> buildMoveEvents(
         const GoEnv& before = history[k];
         const GoEnv& after = history[k + 1];
         const GoAction& action = action_pairs[k].first;
-        
+
         MoveInfo info = analyzeMove(before, after, action);
         MoveEvent ev{action.getPlayer(), action.getActionID(), std::move(info.captured_stones)};
         events.push_back(std::move(ev));
     }
-    
+
     return events;
 }
 
-int countStonesOnBoard(const GoEnv& env, Player p) {
+int countStonesOnBoard(const GoEnv& env, Player p)
+{
     const int N = env.getBoardSize();
     int cnt = 0;
     for (int i = 0; i < N * N; ++i) {
@@ -137,7 +141,7 @@ std::pair<std::unordered_set<int>, std::unordered_set<int>> computeMustSets(
 {
     const int N = history[0].getBoardSize();
     const int PASS = N * N;
-    auto other = [](Player p){ return (p == Player::kPlayer1) ? Player::kPlayer2 : Player::kPlayer1; };
+    auto other = [](Player p) { return (p == Player::kPlayer1) ? Player::kPlayer2 : Player::kPlayer1; };
 
     const Player MY = perspective;
     const Player OPP = other(MY);
@@ -210,14 +214,14 @@ std::vector<SeqState> sampleInfoSetAtMove(
     Player my_perspective,
     int target_black_count,
     int target_white_count,
-    int max_total_attempts = 2000)
+    int max_total_attempts = 100)
 {
     const int PASS = board_size * board_size;
     std::vector<SeqState> out;
     out.reserve(target_samples);
     std::unordered_set<GoHashKey> seen;
 
-    auto other = [](Player p){ return (p == Player::kPlayer1) ? Player::kPlayer2 : Player::kPlayer1; };
+    auto other = [](Player p) { return (p == Player::kPlayer1) ? Player::kPlayer2 : Player::kPlayer1; };
     Player opp = other(my_perspective);
 
     std::mt19937 rng{std::random_device{}()};
@@ -227,8 +231,7 @@ std::vector<SeqState> sampleInfoSetAtMove(
                                   Player p,
                                   std::unordered_set<int>& satisfied_black,
                                   std::unordered_set<int>& satisfied_white,
-                                  std::vector<GoAction>& seq)->bool 
-    {
+                                  std::vector<GoAction>& seq) -> bool {
         GoEnv test = env;
         GoAction a(pos, p);
         if (!test.act(a)) return false;
@@ -275,35 +278,42 @@ std::vector<SeqState> sampleInfoSetAtMove(
             if (!placed) {
                 GoEnv test = env;
                 GoAction pass(PASS, turn);
-                if (!test.act(pass)) { fail = true; break; }
+                if (!test.act(pass)) {
+                    fail = true;
+                    break;
+                }
                 env = std::move(test);
                 seq.push_back(pass);
             }
 
             turn = other(turn);
         }
-        
+
         if (fail || !pending_black.empty() || !pending_white.empty()) continue;
 
         // Step 2: Place opponent's stones until target count
         int cur_black = countStonesOnBoard(env, Player::kPlayer1);
         int cur_white = countStonesOnBoard(env, Player::kPlayer2);
 
-        int need_opp = (opp == Player::kPlayer1) ? 
-                       std::max(0, target_black_count - cur_black) : 
-                       std::max(0, target_white_count - cur_white);
+        int need_opp = (opp == Player::kPlayer1) ? std::max(0, target_black_count - cur_black) : std::max(0, target_white_count - cur_white);
 
         int safety_steps = board_size * board_size * 2;
         while (!fail && safety_steps-- > 0 && need_opp > 0) {
             if (turn == my_perspective) {
                 GoEnv test = env;
                 GoAction pass(PASS, turn);
-                if (!test.act(pass)) { fail = true; break; }
+                if (!test.act(pass)) {
+                    fail = true;
+                    break;
+                }
                 env = std::move(test);
                 seq.push_back(pass);
             } else {
                 std::vector<GoAction> legal = env.getLegalActions();
-                if (legal.empty()) { fail = true; break; }
+                if (legal.empty()) {
+                    fail = true;
+                    break;
+                }
                 std::shuffle(legal.begin(), legal.end(), rng);
 
                 bool moved = false;
@@ -322,7 +332,10 @@ std::vector<SeqState> sampleInfoSetAtMove(
                     --need_opp;
                     break;
                 }
-                if (!moved) { fail = true; break; }
+                if (!moved) {
+                    fail = true;
+                    break;
+                }
             }
             turn = other(turn);
         }
@@ -344,24 +357,25 @@ std::vector<SeqState> sampleInfoSetAtMove(
 
 // Feature Extraction Functions
 
-std::vector<float> extractBoardState(const GoEnv& env, utils::Rotation rotation) {
+std::vector<float> extractBoardState(const GoEnv& env, utils::Rotation rotation)
+{
     const int N = env.getBoardSize();
     std::vector<float> board_state;
     board_state.reserve(2 * N * N);
-    
+
     // Channel 0: Black stones
     for (int pos = 0; pos < N * N; ++pos) {
         int rot_pos = env.getRotatePosition(pos, utils::reversed_rotation[static_cast<int>(rotation)]);
         board_state.push_back(env.getStoneBitboard().get(Player::kPlayer1).test(rot_pos) ? 1.0f : 0.0f);
     }
-    
+
     // Channel 1: White stones
     for (int pos = 0; pos < N * N; ++pos) {
         int rot_pos = env.getRotatePosition(pos, utils::reversed_rotation[static_cast<int>(rotation)]);
         board_state.push_back(env.getStoneBitboard().get(Player::kPlayer2).test(rot_pos) ? 1.0f : 0.0f);
     }
-    
-    return board_state;  // 2 * N * N floats
+
+    return board_state; // 2 * N * N floats
 }
 
 std::vector<float> extractAnchorFeatures(
@@ -370,24 +384,22 @@ std::vector<float> extractAnchorFeatures(
     utils::Rotation rotation)
 {
     const int N = env_loader.getBoardSize();
-    const int H = 12;  // history length
-    const int C = 6;   // channels per timestep
+    const int H = 12; // history length
+    const int C = 6;  // channels per timestep
     const int PASS = N * N;
-    
+
     std::vector<float> anchor;
     anchor.reserve(H * C * N * N);
-    
+
     std::vector<GoEnv> history = rebuildFullHistory(env_loader, target_pos);
     const auto& action_pairs = env_loader.getActionPairs();
     std::vector<MoveEvent> events = buildMoveEvents(history, env_loader);
-    
-    Player my_perspective = (target_pos > 0 && target_pos <= static_cast<int>(action_pairs.size())) ?
-                            action_pairs[target_pos - 1].first.nextPlayer() :
-                            Player::kPlayer1;
-    
+
+    Player my_perspective = (target_pos > 0 && target_pos <= static_cast<int>(action_pairs.size())) ? action_pairs[target_pos - 1].first.nextPlayer() : Player::kPlayer1;
+
     for (int t = 0; t < H; ++t) {
         int step_idx = target_pos - H + 1 + t;
-        
+
         if (step_idx < 0 || step_idx >= static_cast<int>(history.size())) {
             for (int c = 0; c < C; ++c) {
                 for (int pos = 0; pos < N * N; ++pos) {
@@ -396,13 +408,10 @@ std::vector<float> extractAnchorFeatures(
             }
             continue;
         }
-        
+
         const GoEnv& env_at_t = history[step_idx];
         const auto& my_stones = env_at_t.getStoneBitboard().get(my_perspective);
-        const auto& opp_stones = env_at_t.getStoneBitboard().get(
-            my_perspective == Player::kPlayer1 ? Player::kPlayer2 : Player::kPlayer1
-        );
-        
+
         // get action if it exists
         bool is_pass = false;
         std::vector<int> captured_this_turn;
@@ -411,18 +420,18 @@ std::vector<float> extractAnchorFeatures(
             is_pass = (ev.pos == PASS);
             captured_this_turn = ev.captured_stones;
         }
-        
+
         // Channel 0: self_stones
         for (int pos = 0; pos < N * N; ++pos) {
             int rot_pos = env_at_t.getRotatePosition(pos, utils::reversed_rotation[static_cast<int>(rotation)]);
             anchor.push_back(my_stones.test(rot_pos) ? 1.0f : 0.0f);
         }
-        
+
         // Channel 1: illegal_attempts（all 0s temporarily）
         for (int pos = 0; pos < N * N; ++pos) {
             anchor.push_back(0.0f);
         }
-        
+
         // Channel 2: legal_move
         for (int pos = 0; pos < N * N; ++pos) {
             int rot_pos = env_at_t.getRotatePosition(pos, utils::reversed_rotation[static_cast<int>(rotation)]);
@@ -433,7 +442,7 @@ std::vector<float> extractAnchorFeatures(
             }
             anchor.push_back(was_last_move ? 1.0f : 0.0f);
         }
-        
+
         // Channel 3: captured_black
         for (int pos = 0; pos < N * N; ++pos) {
             int rot_pos = env_at_t.getRotatePosition(pos, utils::reversed_rotation[static_cast<int>(rotation)]);
@@ -447,7 +456,7 @@ std::vector<float> extractAnchorFeatures(
             }
             anchor.push_back(was_captured_black ? 1.0f : 0.0f);
         }
-        
+
         // Channel 4: captured_white
         for (int pos = 0; pos < N * N; ++pos) {
             int rot_pos = env_at_t.getRotatePosition(pos, utils::reversed_rotation[static_cast<int>(rotation)]);
@@ -461,14 +470,14 @@ std::vector<float> extractAnchorFeatures(
             }
             anchor.push_back(was_captured_white ? 1.0f : 0.0f);
         }
-        
+
         // Channel 5: is_pass
         for (int pos = 0; pos < N * N; ++pos) {
             anchor.push_back(is_pass ? 1.0f : 0.0f);
         }
     }
-    
-    return anchor;  // H * C * N * N floats
+
+    return anchor; // H * C * N * N floats
 }
 
 ReplayBuffer::ReplayBuffer()
@@ -511,7 +520,31 @@ void ReplayBuffer::addData(const EnvironmentLoader& env_loader)
 
 std::pair<int, int> ReplayBuffer::sampleEnvAndPos()
 {
+    if (env_loaders_.empty()) {
+        std::cerr << "FATAL: replay_buffer is empty! No data loaded." << std::endl;
+        throw std::runtime_error("Empty replay buffer");
+    }
+
+    if (game_priorities_.empty() || position_priorities_.empty()) {
+        std::cerr << "FATAL: priorities not initialized!" << std::endl;
+        throw std::runtime_error("Uninitialized priorities");
+    }
+
     int env_id = sampleIndex(game_priorities_);
+
+    if (env_id < 0 || env_id >= static_cast<int>(position_priorities_.size())) {
+        std::cerr << "FATAL: env_id " << env_id << " out of bounds [0, "
+                  << position_priorities_.size() << ")" << std::endl;
+        throw std::runtime_error("Invalid env_id");
+    }
+
+    const auto& pos_prio = position_priorities_[env_id];
+    if (pos_prio.size() > 1000) {
+        std::cerr << "FATAL: position_priorities_[" << env_id << "].size() = "
+                  << pos_prio.size() << " is unreasonable!" << std::endl;
+        throw std::runtime_error("Corrupted position_priorities");
+    }
+
     int pos_id = sampleIndex(position_priorities_[env_id]);
     return {env_id, pos_id};
 }
@@ -695,29 +728,26 @@ std::vector<float> DataLoaderThread::getNegative(int env_id, int pos, utils::Rot
 {
     const EnvironmentLoader& env_loader = getSharedData()->replay_buffer_.env_loaders_[env_id];
     const int board_size = env_loader.getBoardSize();
-    
+
     std::vector<GoEnv> history = rebuildFullHistory(env_loader, pos);
-    
+
     const GoEnv& truth_env = history[std::min(pos, static_cast<int>(history.size()) - 1)];
     GoHashKey truth_hash = truth_env.getHashKey();
-    
+
     std::vector<MoveEvent> events = buildMoveEvents(history, env_loader);
-    
-    Player my_perspective = (pos > 0 && pos <= static_cast<int>(env_loader.getActionPairs().size())) ?
-                            env_loader.getActionPairs()[pos - 1].first.nextPlayer() :
-                            Player::kPlayer1;
-    
+
+    Player my_perspective = (pos > 0 && pos <= static_cast<int>(env_loader.getActionPairs().size())) ? env_loader.getActionPairs()[pos - 1].first.nextPlayer() : Player::kPlayer1;
+
     auto [must_black, must_white] = computeMustSets(pos, my_perspective, events, history);
-    
+
     int target_black = countStonesOnBoard(truth_env, Player::kPlayer1);
     int target_white = countStonesOnBoard(truth_env, Player::kPlayer2);
-    
-    const size_t NUM_CANDIDATES = 50;
+
+    const size_t NUM_CANDIDATES = 5;
     std::vector<SeqState> info_set = sampleInfoSetAtMove(
         board_size, pos, must_black, must_white, NUM_CANDIDATES,
-        my_perspective, target_black, target_white, 500
-    );
-    
+        my_perspective, target_black, target_white, 100);
+
     // choose one (not ground truth) from the info set
     std::vector<SeqState> negatives;
     for (const auto& seq_state : info_set) {
@@ -725,21 +755,26 @@ std::vector<float> DataLoaderThread::getNegative(int env_id, int pos, utils::Rot
             negatives.push_back(seq_state);
         }
     }
-    
+
     if (negatives.empty()) {
-        std::cerr << "[WARNING] Info set only contains ground truth." << std::endl;
+        static std::atomic<int> empty_count{0};
+        int current_count = ++empty_count;
+
+        if (current_count % 500 == 0) {
+            std::cerr << "[WARNING] Empty negatives: " << current_count << std::endl;
+        }
         return std::vector<float>();
     }
-    
+
     static std::mt19937 rng{std::random_device{}()};
     std::uniform_int_distribution<size_t> dist(0, negatives.size() - 1);
     const auto& selected = negatives[dist(rng)];
-    
+
     GoEnv neg_env(board_size);
     for (const auto& action : selected.seq) {
         neg_env.act(action);
     }
-    
+
     return extractBoardState(neg_env, rotation);
 }
 
