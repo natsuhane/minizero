@@ -7,6 +7,10 @@
   * Example: `./scripts/zero-worker.sh go localhost 9999 op --op_executable_file minizero/learner/train_siamese.py`
   * PORT: see `zero_server_port`
 
+## Analyse figures
+* Re-draw the training figures (training folder/analysis/*): `python tools/analysis.py -in_dir [training folder]`
+* Add figures: See tools/analysis.py **"triplet_loss"**
+
 ## To be completed
 * `./scripts/train-siamese.sh go [config file] [end iteration] --link_sgf [sgf folder]`
   * Example: `./scripts/train-siamese.sh go go.cfg 300 --link_sgf sgf`

@@ -49,6 +49,13 @@ def get_myDict(lines, iter):
                     myDict[key] = []
                 myDict[key].append(float(ret3[0][3]))
                 continue
+            ret = re.findall(r'(triplet_loss):\s(-?\d+\.?\d*(?:[Ee]-?\d+)?)', line)
+            if ret != []:
+                key = ret[0][0]
+                if key not in myDict:
+                    myDict[key] = []
+                myDict[key].append(float(ret[0][1]))
+                continue
             ret1 = re.findall(r'(\[SelfPlay\s[^Std]\w+.\s[^Data]\w+\s(Lengths|Returns)\])\s(-?\d+\.\d+|\d+)', line)
             if ret1 != []:
                 key = ret1[0][0]
@@ -163,7 +170,11 @@ def analysis_(dir, path, iter, all: bool = False, name: bool = False):
     Training_log.close()
     # plt target
     myDict, learner_training_display_step, learner_training_step = get_myDict(lines, iter)
-    Fig_list = list(set(["Lengths", "Time", "Returns"] + [re.sub(r"_\d+$", "", key) for key in myDict if re.match(r'^(loss|accuracy)_', key)]))
+    Fig_list = list(set(
+        ["Lengths", "Time", "Returns"] +
+        [re.sub(r"_\d+$", "", key) for key in myDict if re.match(r'^(loss|accuracy)_', key)] +
+        ["triplet_loss"]
+    ))
     # plt figure
     counter_subplot = sum([1 for word in Fig_list if word in ' '.join(myDict.keys())])
     if counter_subplot == 0 or len(myDict["Time"]) == 0:
