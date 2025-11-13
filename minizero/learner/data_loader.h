@@ -46,6 +46,7 @@ public:
     std::deque<EnvironmentLoader> env_loaders_;
 
     void addData(const EnvironmentLoader& env_loader);
+    void addTestingData(const EnvironmentLoader& env_loader);
     std::pair<int, int> sampleEnvAndPos();
     int sampleIndex(const std::deque<float>& weight);
     float getLossScale(const std::pair<int, int>& p);
@@ -55,11 +56,14 @@ class DataLoaderSharedData : public utils::BaseSharedData {
 public:
     std::string getNextEnvString();
     int getNextBatchIndex();
+    std::pair<int, int> getNextEnvPosIndex();
 
     virtual void createDataPtr() { data_ptr_ = std::make_shared<BatchDataPtr>(); }
     inline std::shared_ptr<BatchDataPtr> getDataPtr() { return std::static_pointer_cast<BatchDataPtr>(data_ptr_); }
 
     int batch_index_;
+    int env_index_ = 0; // for game index
+    int pos_index_ = 0; // for position index
     ReplayBuffer replay_buffer_;
     std::mutex mutex_;
     std::deque<std::string> env_strings_;
@@ -80,12 +84,13 @@ protected:
     virtual bool sampleData();
 
     virtual void setIIGTrainingData(int batch_index);
+    virtual void setIIGTestingData(int batch_index, int env_id, int pos);
     virtual void setAlphaZeroTrainingData(int batch_index);
     virtual void setMuZeroTrainingData(int batch_index);
 
     std::vector<float> getAnchor(int env_id, int pos, utils::Rotation rotation);
     std::vector<float> getPositive(int env_id, int pos, utils::Rotation rotation);
-    std::vector<float> getNegative(int env_id, int pos, utils::Rotation rotation);
+    std::vector<float> getNegative(int env_id, int pos, utils::Rotation rotation, int num_negatives);
 
     inline std::shared_ptr<DataLoaderSharedData> getSharedData() { return std::static_pointer_cast<DataLoaderSharedData>(shared_data_); }
 };

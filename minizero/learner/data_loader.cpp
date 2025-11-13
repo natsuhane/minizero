@@ -518,6 +518,12 @@ void ReplayBuffer::addData(const EnvironmentLoader& env_loader)
     }
 }
 
+void ReplayBuffer::addTestingData(const EnvironmentLoader& env_loader)
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    env_loaders_.push_back(env_loader);
+}
+
 std::pair<int, int> ReplayBuffer::sampleEnvAndPos()
 {
     if (env_loaders_.empty()) {
@@ -582,6 +588,19 @@ int DataLoaderSharedData::getNextBatchIndex()
     return (batch_index_ < config::learner_batch_size ? batch_index_++ : config::learner_batch_size);
 }
 
+std::pair<int, int> DataLoaderSharedData::getNextEnvPosIndex()
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    EnvironmentLoader& env_loader = replay_buffer_.env_loaders_[env_index_];
+    const auto& action_pairs = env_loader.getActionPairs();
+    if (pos_index_ >= static_cast<int>(action_pairs.size())) {
+        // move to next environment
+        env_index_++;
+        pos_index_ = 0;
+    }
+    return {env_index_, pos_index_++};
+}
+
 void DataLoaderThread::initialize()
 {
     int seed = config::program_auto_seed ? std::random_device()() : config::program_seed + id_;
@@ -603,7 +622,13 @@ bool DataLoaderThread::addEnvironmentLoader()
     if (env_string.empty()) { return false; }
 
     EnvironmentLoader env_loader;
-    if (env_loader.loadFromString(env_string)) { getSharedData()->replay_buffer_.addData(env_loader); }
+    if (env_loader.loadFromString(env_string)) {
+        if (config::siamese_mode == "training") {
+            getSharedData()->replay_buffer_.addData(env_loader);
+        } else {
+            getSharedData()->replay_buffer_.addTestingData(env_loader);
+        }
+    }
     return true;
 }
 
@@ -613,7 +638,14 @@ bool DataLoaderThread::sampleData()
     if (batch_index >= config::learner_batch_size) { return false; }
 
     if (config::nn_type_name == "siamese") {
-        setIIGTrainingData(batch_index);
+        if (config::siamese_mode == "training") {
+            setIIGTrainingData(batch_index);
+        } else if (config::siamese_mode == "testing") {
+            std::pair<int, int> p = getSharedData()->getNextEnvPosIndex();
+            setIIGTestingData(batch_index, p.first, p.second);
+        } else {
+            return false;
+        }
     } else if (config::nn_type_name == "alphazero") {
         setAlphaZeroTrainingData(batch_index);
     } else if (config::nn_type_name == "muzero") {
@@ -635,7 +667,21 @@ void DataLoaderThread::setIIGTrainingData(int batch_index)
     Rotation rotation = static_cast<Rotation>(Random::randInt() % static_cast<int>(Rotation::kRotateSize));
     std::vector<float> anchor = getAnchor(env_id, pos, rotation);
     std::vector<float> positive = getPositive(env_id, pos, rotation);
-    std::vector<float> negative = getNegative(env_id, pos, rotation);
+    std::vector<float> negative = getNegative(env_id, pos, rotation, 1);
+
+    // write data to data_ptr
+    std::copy(anchor.begin(), anchor.end(), getSharedData()->getDataPtr()->anchor_ + anchor.size() * batch_index);
+    std::copy(positive.begin(), positive.end(), getSharedData()->getDataPtr()->positive_ + positive.size() * batch_index);
+    std::copy(negative.begin(), negative.end(), getSharedData()->getDataPtr()->negative_ + negative.size() * batch_index);
+}
+
+void DataLoaderThread::setIIGTestingData(int batch_index, int env_id, int pos)
+{
+    // get next position
+    Rotation rotation = static_cast<Rotation>(Random::randInt() % static_cast<int>(Rotation::kRotateSize));
+    std::vector<float> anchor = getAnchor(env_id, pos, rotation);
+    std::vector<float> positive = getPositive(env_id, pos, rotation);
+    std::vector<float> negative = getNegative(env_id, pos, rotation, config::siamese_num_negatives);
 
     // write data to data_ptr
     std::copy(anchor.begin(), anchor.end(), getSharedData()->getDataPtr()->anchor_ + anchor.size() * batch_index);
@@ -724,7 +770,7 @@ std::vector<float> DataLoaderThread::getPositive(int env_id, int pos, utils::Rot
     return extractBoardState(env, rotation);
 }
 
-std::vector<float> DataLoaderThread::getNegative(int env_id, int pos, utils::Rotation rotation)
+std::vector<float> DataLoaderThread::getNegative(int env_id, int pos, utils::Rotation rotation, int num_negatives)
 {
     const EnvironmentLoader& env_loader = getSharedData()->replay_buffer_.env_loaders_[env_id];
     const int board_size = env_loader.getBoardSize();
@@ -746,13 +792,16 @@ std::vector<float> DataLoaderThread::getNegative(int env_id, int pos, utils::Rot
     const size_t NUM_CANDIDATES = 5;
     std::vector<SeqState> info_set = sampleInfoSetAtMove(
         board_size, pos, must_black, must_white, NUM_CANDIDATES,
-        my_perspective, target_black, target_white, 100);
+        my_perspective, target_black, target_white, config::siamese_num_negatives);
 
-    // choose one (not ground truth) from the info set
+    // choose num_negatives boards (not ground truth) from the info set
     std::vector<SeqState> negatives;
     for (const auto& seq_state : info_set) {
         if (seq_state.hash != truth_hash) {
             negatives.push_back(seq_state);
+        }
+        if (negatives.size() >= num_negatives) {
+            break;
         }
     }
 
@@ -766,16 +815,23 @@ std::vector<float> DataLoaderThread::getNegative(int env_id, int pos, utils::Rot
         return std::vector<float>();
     }
 
-    static std::mt19937 rng{std::random_device{}()};
-    std::uniform_int_distribution<size_t> dist(0, negatives.size() - 1);
-    const auto& selected = negatives[dist(rng)];
+    std::vector<float> result;
+    for (const auto& neg : negatives) {
+        GoEnv neg_env(board_size);
+        for (const auto& action : neg.seq) {
+            neg_env.act(action);
+        }
 
-    GoEnv neg_env(board_size);
-    for (const auto& action : selected.seq) {
-        neg_env.act(action);
+        std::vector<float> board_state = extractBoardState(neg_env, rotation);
+        result.insert(result.end(), board_state.begin(), board_state.end());
+    }
+    // fill up to num_negatives
+    while (negatives.size() < static_cast<size_t>(num_negatives)) {
+        result.insert(result.end(), board_size * board_size * 2, 0.0f);
+        negatives.push_back(SeqState{});
     }
 
-    return extractBoardState(neg_env, rotation);
+    return result;
 }
 
 DataLoader::DataLoader(const std::string& conf_file_name)
