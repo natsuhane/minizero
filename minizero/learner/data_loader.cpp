@@ -789,10 +789,9 @@ std::vector<float> DataLoaderThread::getNegative(int env_id, int pos, utils::Rot
     int target_black = countStonesOnBoard(truth_env, Player::kPlayer1);
     int target_white = countStonesOnBoard(truth_env, Player::kPlayer2);
 
-    const size_t NUM_CANDIDATES = 5;
     std::vector<SeqState> info_set = sampleInfoSetAtMove(
-        board_size, pos, must_black, must_white, NUM_CANDIDATES,
-        my_perspective, target_black, target_white, config::siamese_num_negatives);
+        board_size, pos, must_black, must_white, config::siamese_num_negatives,
+        my_perspective, target_black, target_white, config::siamese_max_sample_negatives);
 
     // choose num_negatives boards (not ground truth) from the info set
     std::vector<SeqState> negatives;

@@ -70,7 +70,8 @@ int nn_num_hidden_channels = 256;
 int nn_num_value_hidden_channels = 256;
 std::string nn_type_name = "alphazero";
 std::string siamese_mode = "training";
-int siamese_num_negatives = 100;
+int siamese_num_negatives = 5;
+int siamese_max_sample_negatives = 100;
 
 // environment parameters
 int env_board_size = 0;
@@ -157,7 +158,8 @@ void setConfiguration(ConfigureLoader& cl)
     cl.addParameter("nn_num_value_hidden_channels", nn_num_value_hidden_channels, "hyperparameter for the model; the size of the hidden channels in the value network", "Network"); // ref: AGZ
     cl.addParameter("nn_type_name", nn_type_name, "the type of training algorithm and network: alphazero/muzero", "Network");
     cl.addParameter("siamese_mode", siamese_mode, "the mode of siamese network: training/testing", "Network");
-    cl.addParameter("siamese_num_negatives", siamese_num_negatives, "the number of negative board samples", "Network");
+    cl.addParameter("siamese_num_negatives", siamese_num_negatives, "the number of negative boards return from dataloader", "Network");
+    cl.addParameter("siamese_max_sample_negatives", siamese_max_sample_negatives, "the maximum number of sampled negative boards when constructing info set", "Network");
 
     // environment parameters
     cl.addParameter("env_board_size", env_board_size, "the size of board", "Environment");
