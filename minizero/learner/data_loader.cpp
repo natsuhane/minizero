@@ -8,6 +8,7 @@
 #include <deque>
 #include <fstream>
 #include <iostream>
+#include <map>
 #include <numeric>
 #include <set>
 #include <unordered_set>
@@ -203,6 +204,411 @@ bool breaksSatisfiedMust(
         }
     }
     return false;
+}
+
+// ===== Move-Stone Sampling Helper Functions =====
+
+std::vector<int> identifyMovableStones(
+    const GoEnv& truth_env,
+    const std::unordered_set<int>& must_black,
+    const std::unordered_set<int>& must_white,
+    Player my_perspective)
+{
+    std::vector<int> movable;
+    const int board_size = truth_env.getBoardSize();
+
+    // Get OPPONENT's stones
+    Player opponent = (my_perspective == Player::kPlayer1) ? Player::kPlayer2 : Player::kPlayer1;
+    const auto& opp_stones = truth_env.getStoneBitboard().get(opponent);
+
+    // Determine which MUST set to use for OPPONENT
+    const auto& must_set = (opponent == Player::kPlayer1) ? must_black : must_white;
+
+    // Find all OPPONENT's stones that are not in MUST set
+    for (int pos = 0; pos < board_size * board_size; ++pos) {
+        if (!opp_stones.test(pos)) continue; // Not opponent's stone
+        if (must_set.count(pos)) continue;   // Is MUST stone, cannot move
+
+        movable.push_back(pos);
+    }
+
+    return movable;
+}
+
+std::vector<int> findCandidateTargets(
+    const GoEnv& truth_env,
+    int source_pos,
+    Player perspective,
+    int max_distance)
+{
+    std::vector<int> candidates;
+    const int board_size = truth_env.getBoardSize();
+
+    // 1. Get the color of the stone to move
+    Player stone_color = truth_env.getGrid(source_pos).getPlayer();
+    if (stone_color == Player::kPlayerNone) {
+        return candidates; // source_pos is empty, error
+    }
+
+    // 2. Define opponent color (the side that might get captured)
+    Player opponent = (stone_color == Player::kPlayer1) ? Player::kPlayer2 : Player::kPlayer1;
+
+    // 3. Calculate source coordinates (for distance filter)
+    int source_row = source_pos / board_size;
+    int source_col = source_pos % board_size;
+
+    // 4. Scan all positions
+    for (int pos = 0; pos < board_size * board_size; ++pos) {
+        // 4.1 Check if position is empty
+        if (truth_env.getGrid(pos).getPlayer() != Player::kPlayerNone) {
+            continue; // Not empty, skip
+        }
+
+        // 4.2 Distance filter
+        if (max_distance > 0) {
+            int row = pos / board_size;
+            int col = pos % board_size;
+            int manhattan = std::abs(row - source_row) + std::abs(col - source_col);
+
+            if (manhattan > max_distance) {
+                continue; // Too far, skip
+            }
+        }
+
+        // 4.3 Check legality (suicide, ko)
+        GoAction test_action(pos, stone_color);
+        if (!truth_env.isLegalAction(test_action)) {
+            continue; // Illegal (suicide or ko), skip
+        }
+
+        // 4.4 Check if placing here would capture opponent stones
+        // Capture condition: neighbor has opponent block with only 1 liberty, and that liberty is pos
+        bool would_capture = false;
+
+        const std::vector<int>& neighbors = truth_env.getGrid(pos).getNeighbors();
+        for (int nb_pos : neighbors) {
+            const GoGrid& nb_grid = truth_env.getGrid(nb_pos);
+
+            // Check if neighbor is opponent stone
+            if (nb_grid.getPlayer() != opponent) {
+                continue;
+            }
+
+            // Get the block this stone belongs to
+            const GoBlock* nb_block = nb_grid.getBlock();
+            if (!nb_block) continue;
+
+            // Check if block has only 1 liberty
+            if (nb_block->getNumLiberty() == 1) {
+                // Check if that single liberty is exactly pos
+                const GoBitboard& liberty_bb = nb_block->getLibertyBitboard();
+                if (liberty_bb.test(pos)) {
+                    // This block's only liberty is pos!
+                    // Placing at pos would capture this block
+                    would_capture = true;
+                    break;
+                }
+            }
+        }
+
+        if (would_capture) {
+            continue; // Would capture, skip
+        }
+
+        // 4.5 Passed all checks, add to candidates
+        candidates.push_back(pos);
+    }
+
+    return candidates;
+}
+
+std::optional<SeqState> reconstructBoardWithStoneConfig(
+    int board_size,
+    int move_number,
+    const std::unordered_set<int>& must_black,
+    const std::unordered_set<int>& must_white,
+    const std::map<int, Player>& desired_stones,
+    Player my_perspective)
+{
+    const int PASS = board_size * board_size;
+    std::vector<GoAction> seq;
+    seq.reserve(128);
+
+    auto other = [](Player p) { return (p == Player::kPlayer1) ? Player::kPlayer2 : Player::kPlayer1; };
+    Player opponent = other(my_perspective);
+
+    GoEnv env(board_size);
+    std::unordered_set<int> satisfied_black, satisfied_white;
+    Player turn = Player::kPlayer1;
+
+    auto try_place_specific = [&](GoEnv& env, int pos, Player p,
+                                  std::unordered_set<int>& satisfied_black,
+                                  std::unordered_set<int>& satisfied_white,
+                                  std::vector<GoAction>& seq) -> bool {
+        GoEnv test = env;
+        GoAction a(pos, p);
+        if (!test.act(a)) {
+            return false;
+        }
+        if (breaksSatisfiedMust(env, test, a, satisfied_black, satisfied_white)) {
+            return false;
+        }
+        env = std::move(test);
+        seq.push_back(a);
+        if (p == Player::kPlayer1) {
+            satisfied_black.insert(pos);
+        } else {
+            satisfied_white.insert(pos);
+        }
+        return true;
+    };
+
+    // Helper to pass until it's a specific player's turn
+    auto pass_until_turn = [&](Player target_player) -> bool {
+        while (turn != target_player) {
+            GoEnv test = env;
+            GoAction pass(PASS, turn);
+            if (!test.act(pass)) {
+                return false;
+            }
+            env = std::move(test);
+            seq.push_back(pass);
+            turn = other(turn);
+        }
+        return true;
+    };
+
+    // Helper to place stones in a fixed order
+    auto place_stones_fixed_order = [&](const std::vector<int>& positions, Player player) -> bool {
+        for (int pos : positions) {
+            // Pass until it's the right player's turn
+            if (!pass_until_turn(player)) {
+                return false;
+            }
+            // Try to place the stone
+            if (try_place_specific(env, pos, turn, satisfied_black, satisfied_white, seq)) {
+                turn = other(turn);
+            } else {
+                return false;
+            }
+        }
+        return true;
+    };
+
+    // Count expected stones
+    int expected_black = 0, expected_white = 0;
+    for (const auto& [pos, player] : desired_stones) {
+        if (player == Player::kPlayer1)
+            expected_black++;
+        else
+            expected_white++;
+    }
+
+    // Phase 1: Place opponent's MUST stones
+    const auto& must_opp = (opponent == Player::kPlayer1) ? must_black : must_white;
+    std::vector<int> opp_must_positions(must_opp.begin(), must_opp.end());
+
+    if (!place_stones_fixed_order(opp_must_positions, opponent)) {
+        return std::nullopt;
+    }
+
+    // Phase 2: Place own MUST stones
+    const auto& must_my = (my_perspective == Player::kPlayer1) ? must_black : must_white;
+    std::vector<int> my_must_positions(must_my.begin(), must_my.end());
+
+    if (!place_stones_fixed_order(my_must_positions, my_perspective)) {
+        return std::nullopt;
+    }
+
+    // Phase 3: Place all other desired stones
+
+    // Separate non-MUST stones by color
+    std::vector<int> other_black, other_white;
+    for (const auto& [pos, player] : desired_stones) {
+        // Skip if already placed as MUST
+        if (player == Player::kPlayer1) {
+            if (!must_black.count(pos)) {
+                other_black.push_back(pos);
+            }
+        } else {
+            if (!must_white.count(pos)) {
+                other_white.push_back(pos);
+            }
+        }
+    }
+
+    // Place opponent's other stones first
+    if (opponent == Player::kPlayer1) {
+        if (!place_stones_fixed_order(other_black, Player::kPlayer1)) {
+            return std::nullopt;
+        }
+    } else {
+        if (!place_stones_fixed_order(other_white, Player::kPlayer2)) {
+            return std::nullopt;
+        }
+    }
+
+    // Place own other stones
+    if (my_perspective == Player::kPlayer1) {
+        if (!place_stones_fixed_order(other_black, Player::kPlayer1)) {
+            return std::nullopt;
+        }
+    } else {
+        if (!place_stones_fixed_order(other_white, Player::kPlayer2)) {
+            return std::nullopt;
+        }
+    }
+
+    int final_black = env.getStoneBitboard().get(Player::kPlayer1).count();
+    int final_white = env.getStoneBitboard().get(Player::kPlayer2).count();
+
+    if (final_black != expected_black || final_white != expected_white) {
+        return std::nullopt;
+    }
+
+    GoHashKey h = env.getHashKey();
+    return SeqState{std::move(seq), h};
+}
+
+std::vector<SeqState> sampleInfoSetByMovingStones(
+    const GoEnv& truth_env,
+    const std::unordered_set<int>& must_black,
+    const std::unordered_set<int>& must_white,
+    Player my_perspective,
+    size_t target_samples,
+    int max_move_distance,
+    int move_number = -1,
+    int total_moves = -1,
+    int must_black_size = -1,
+    int must_white_size = -1)
+{
+    const int board_size = truth_env.getBoardSize();
+    const GoHashKey truth_hash = truth_env.getHashKey();
+
+    // Ground truth stone counts
+    int truth_black = truth_env.getStoneBitboard().get(Player::kPlayer1).count();
+    int truth_white = truth_env.getStoneBitboard().get(Player::kPlayer2).count();
+
+    std::vector<SeqState> out;
+    out.reserve(target_samples);
+    std::unordered_set<GoHashKey> seen;
+
+    // Identify movable stones
+    auto movable = identifyMovableStones(truth_env, must_black, must_white, my_perspective);
+
+    if (movable.empty()) {
+        // std::cerr << "[WARNING] No movable stones! Cannot use Move-Stone sampling." << std::endl;
+        return out;
+    }
+
+    std::mt19937 rng{std::random_device{}()};
+
+    int success_count = 0;
+    int attempt_count = 0;
+    int consecutive_failures = 0;
+    const int max_consecutive_failures = 10;
+
+    while (success_count < static_cast<int>(target_samples)) {
+        attempt_count++;
+
+        std::uniform_int_distribution<> stone_dis(0, static_cast<int>(movable.size()) - 1);
+        int selected_stone = movable[stone_dis(rng)];
+
+        std::map<int, Player> desired_stones;
+        std::map<int, Player> original_stones;
+
+        // Add all stones from truth_env
+        const auto& black_stones = truth_env.getStoneBitboard().get(Player::kPlayer1);
+        const auto& white_stones = truth_env.getStoneBitboard().get(Player::kPlayer2);
+
+        for (int pos = 0; pos < board_size * board_size; ++pos) {
+            if (black_stones.test(pos)) {
+                desired_stones[pos] = Player::kPlayer1;
+                original_stones[pos] = Player::kPlayer1;
+            } else if (white_stones.test(pos)) {
+                desired_stones[pos] = Player::kPlayer2;
+                original_stones[pos] = Player::kPlayer2;
+            }
+        }
+
+        // Remove selected stone from desired configuration
+        desired_stones.erase(selected_stone);
+
+        // Find new target position for the selected stone
+        auto candidates = findCandidateTargets(truth_env, selected_stone, my_perspective, max_move_distance);
+
+        if (candidates.empty()) {
+            consecutive_failures++;
+            if (consecutive_failures >= max_consecutive_failures) {
+                break;
+            }
+            continue;
+        }
+
+        // Randomly select a target position
+        std::uniform_int_distribution<> target_dis(0, static_cast<int>(candidates.size()) - 1);
+        int target_pos = candidates[target_dis(rng)];
+
+        // Add stone at new position (preserving original player)
+        Player original_player = original_stones[selected_stone];
+        desired_stones[target_pos] = original_player;
+
+        // Reconstruct board with the new configuration
+        auto result = reconstructBoardWithStoneConfig(
+            board_size, 0, must_black, must_white, desired_stones, my_perspective);
+
+        if (!result.has_value()) {
+            consecutive_failures++;
+            if (consecutive_failures >= max_consecutive_failures) {
+                break;
+            }
+            continue;
+        }
+
+        // Reconstruct the negative board to verify
+        GoEnv neg_env(board_size);
+        for (const auto& action : result->seq) {
+            neg_env.act(action);
+        }
+
+        int neg_black = neg_env.getStoneBitboard().get(Player::kPlayer1).count();
+        int neg_white = neg_env.getStoneBitboard().get(Player::kPlayer2).count();
+
+        // Verify it's different from the positive
+        if (result->hash == truth_hash) {
+            consecutive_failures++;
+            if (consecutive_failures >= max_consecutive_failures) {
+                break;
+            }
+            continue;
+        }
+
+        // Check for duplicates
+        if (seen.count(result->hash)) {
+            consecutive_failures++;
+            if (consecutive_failures >= max_consecutive_failures) {
+                break;
+            }
+            continue;
+        }
+
+        // Verify stone counts match
+        if (neg_black != truth_black || neg_white != truth_white) {
+            consecutive_failures++;
+            if (consecutive_failures >= max_consecutive_failures) {
+                break;
+            }
+            continue;
+        }
+
+        // Success! Add to output
+        seen.insert(result->hash);
+        out.push_back(std::move(*result));
+        success_count++;
+        consecutive_failures = 0; // Reset failure counter on success
+    }
+
+    return out;
 }
 
 std::vector<SeqState> sampleInfoSetAtMove(
@@ -789,9 +1195,110 @@ std::vector<float> DataLoaderThread::getNegative(int env_id, int pos, utils::Rot
     int target_black = countStonesOnBoard(truth_env, Player::kPlayer1);
     int target_white = countStonesOnBoard(truth_env, Player::kPlayer2);
 
-    std::vector<SeqState> info_set = sampleInfoSetAtMove(
-        board_size, pos, must_black, must_white, config::siamese_num_negatives,
-        my_perspective, target_black, target_white, config::siamese_max_sample_negatives);
+    // Prepare information for passing to sampling functions
+    int total_moves = static_cast<int>(env_loader.getActionPairs().size());
+
+    // Select sampling strategy based on configuration
+    std::vector<SeqState> info_set;
+
+    if (config::siamese_sampling_strategy == "move_stone") {
+        // std::cerr << "[INFO] Using Move-Stone sampling strategy" << std::endl;
+        info_set = sampleInfoSetByMovingStones(
+            truth_env, must_black, must_white, my_perspective,
+            config::siamese_max_sample_negatives,
+            config::siamese_max_move_distance,    // max_move_distance from config
+            pos,                                  // move_number
+            total_moves,                          // total_moves
+            static_cast<int>(must_black.size()),  // must_black_size
+            static_cast<int>(must_white.size())); // must_white_size
+
+    } else if (config::siamese_sampling_strategy == "random") {
+        // std::cerr << "[INFO] Using Random sampling strategy" << std::endl;
+        info_set = sampleInfoSetAtMove(
+            board_size, pos, must_black, must_white,
+            config::siamese_max_sample_negatives,
+            my_perspective, target_black, target_white);
+
+    } else if (config::siamese_sampling_strategy == "hybrid") {
+        // Calculate number of samples for each strategy
+        size_t move_stone_count = static_cast<size_t>(
+            config::siamese_max_sample_negatives * config::siamese_move_stone_ratio);
+        size_t random_count = config::siamese_max_sample_negatives - move_stone_count;
+
+        // Generate move_stone samples
+        auto move_stone_samples = sampleInfoSetByMovingStones(
+            truth_env, must_black, must_white, my_perspective,
+            move_stone_count,
+            config::siamese_max_move_distance,    // max_move_distance from config
+            pos,                                  // move_number
+            total_moves,                          // total_moves
+            static_cast<int>(must_black.size()),  // must_black_size
+            static_cast<int>(must_white.size())); // must_white_size
+
+        // Generate random samples
+        auto random_samples = sampleInfoSetAtMove(
+            board_size, pos, must_black, must_white, random_count,
+            my_perspective, target_black, target_white);
+
+        // Combine both
+        info_set.insert(info_set.end(), move_stone_samples.begin(), move_stone_samples.end());
+        info_set.insert(info_set.end(), random_samples.begin(), random_samples.end());
+
+    } else {
+        std::cerr << "[WARNING] Unknown sampling strategy: " << config::siamese_sampling_strategy
+                  << ". Falling back to random." << std::endl;
+        info_set = sampleInfoSetAtMove(
+            board_size, pos, must_black, must_white,
+            config::siamese_max_sample_negatives,
+            my_perspective, target_black, target_white);
+    }
+
+    // Visual comparison output (for debugging)
+    static std::atomic<int> sample_count{0};
+    int current_sample = ++sample_count;
+
+    if (config::siamese_debug_output && (current_sample <= 3 || current_sample % 100 == 0)) { // Show first 3 and every 100th
+        std::cerr << "\n=== Negative Sampling Comparison (Sample #" << current_sample << ") ===" << std::endl;
+
+        // Print Positive (Ground Truth) board
+        std::cerr << "\n[POSITIVE] Ground Truth Board:" << std::endl;
+        std::cout << truth_env.toString() << std::endl;
+        std::cerr << "Hash: " << truth_hash << std::endl;
+        std::cerr << "Black: " << target_black << ", White: " << target_white << std::endl;
+
+        // Print first Negative board (if available)
+        if (!info_set.empty()) {
+            // Find first negative that is different from positive
+            const SeqState* first_neg = nullptr;
+            for (const auto& seq_state : info_set) {
+                if (seq_state.hash != truth_hash) {
+                    first_neg = &seq_state;
+                    break;
+                }
+            }
+
+            if (first_neg) {
+                GoEnv neg_env(board_size);
+                for (const auto& action : first_neg->seq) {
+                    neg_env.act(action);
+                }
+
+                std::cerr << "\n[NEGATIVE] Sampled Board (sample 1):" << std::endl;
+                std::cout << neg_env.toString() << std::endl;
+                std::cerr << "Hash: " << neg_env.getHashKey() << std::endl;
+                int neg_black = neg_env.getStoneBitboard().get(Player::kPlayer1).count();
+                int neg_white = neg_env.getStoneBitboard().get(Player::kPlayer2).count();
+                std::cerr << "Black: " << neg_black << ", White: " << neg_white << std::endl;
+            } else {
+                std::cerr << "\n[WARNING] All sampled boards are same as positive!" << std::endl;
+            }
+        } else {
+            std::cerr << "\n[WARNING] No negatives sampled!" << std::endl;
+        }
+
+        std::cerr << "=====================================\n"
+                  << std::endl;
+    }
 
     // choose num_negatives boards (not ground truth) from the info set
     std::vector<SeqState> negatives;
@@ -799,7 +1306,7 @@ std::vector<float> DataLoaderThread::getNegative(int env_id, int pos, utils::Rot
         if (seq_state.hash != truth_hash) {
             negatives.push_back(seq_state);
         }
-        if (negatives.size() >= num_negatives) {
+        if (negatives.size() >= static_cast<size_t>(num_negatives)) {
             break;
         }
     }

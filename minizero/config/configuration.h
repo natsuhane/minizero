@@ -74,6 +74,10 @@ extern std::string nn_type_name;
 extern std::string siamese_mode;
 extern int siamese_num_negatives;
 extern int siamese_max_sample_negatives;
+extern std::string siamese_sampling_strategy;
+extern float siamese_move_stone_ratio;
+extern bool siamese_debug_output;
+extern int siamese_max_move_distance;
 
 // environment parameters
 extern int env_board_size;

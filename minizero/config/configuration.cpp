@@ -72,6 +72,10 @@ std::string nn_type_name = "alphazero";
 std::string siamese_mode = "training";
 int siamese_num_negatives = 5;
 int siamese_max_sample_negatives = 100;
+std::string siamese_sampling_strategy = "random";
+float siamese_move_stone_ratio = 0.8f;
+bool siamese_debug_output = false;
+int siamese_max_move_distance = 0;
 
 // environment parameters
 int env_board_size = 0;
@@ -160,6 +164,10 @@ void setConfiguration(ConfigureLoader& cl)
     cl.addParameter("siamese_mode", siamese_mode, "the mode of siamese network: training/testing", "Network");
     cl.addParameter("siamese_num_negatives", siamese_num_negatives, "the number of negative boards return from dataloader", "Network");
     cl.addParameter("siamese_max_sample_negatives", siamese_max_sample_negatives, "the maximum number of sampled negative boards when constructing info set", "Network");
+    cl.addParameter("siamese_sampling_strategy", siamese_sampling_strategy, "the sampling strategy for negative boards: random/move_stone/hybrid", "Network");
+    cl.addParameter("siamese_move_stone_ratio", siamese_move_stone_ratio, "the ratio of move_stone samples in hybrid mode (0.0-1.0)", "Network");
+    cl.addParameter("siamese_debug_output", siamese_debug_output, "whether to print debug board visualization output", "Network");
+    cl.addParameter("siamese_max_move_distance", siamese_max_move_distance, "the maximum Manhattan distance for moving stones (0 means no limit)", "Network");
 
     // environment parameters
     cl.addParameter("env_board_size", env_board_size, "the size of board", "Environment");
