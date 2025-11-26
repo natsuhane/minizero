@@ -90,7 +90,11 @@ protected:
 
     std::vector<float> getAnchor(int env_id, int pos, utils::Rotation rotation);
     std::vector<float> getPositive(int env_id, int pos, utils::Rotation rotation);
-    std::vector<float> getNegative(int env_id, int pos, utils::Rotation rotation, int num_negatives);
+    std::vector<float> getNegative(int env_id,
+                                   int pos,
+                                   utils::Rotation rotation,
+                                   int num_outputs,
+                                   int num_candidates);
 
     inline std::shared_ptr<DataLoaderSharedData> getSharedData() { return std::static_pointer_cast<DataLoaderSharedData>(shared_data_); }
 };

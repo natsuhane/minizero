@@ -73,7 +73,7 @@ extern int nn_num_value_hidden_channels;
 extern std::string nn_type_name;
 extern std::string siamese_mode;
 extern int siamese_num_negatives;
-extern int siamese_max_sample_negatives;
+extern int siamese_eval_num_negatives;
 extern std::string siamese_sampling_strategy;
 extern float siamese_move_stone_ratio;
 extern bool siamese_debug_output;
