@@ -25,7 +25,7 @@ class MinizeroDataLoader:
 
         self.anchor = np.zeros(py.get_batch_size() * self.anchor_channels * py.get_nn_input_channel_height() * py.get_nn_input_channel_width(), dtype=np.float32)
         self.positive = np.zeros(py.get_batch_size() * self.board_channels * py.get_nn_input_channel_height() * py.get_nn_input_channel_width(), dtype=np.float32)
-        self.negative = np.zeros(py.get_batch_size() * py.get_siamese_num_negatives() * self.board_channels * py.get_nn_input_channel_height() * py.get_nn_input_channel_width(), dtype=np.float32)
+        self.negative = np.zeros(py.get_batch_size() * py.get_siamese_eval_num_negatives() * self.board_channels * py.get_nn_input_channel_height() * py.get_nn_input_channel_width(), dtype=np.float32)
 
     def load_data(self, testing_dataset):
         file_name = f"{testing_dataset}/1.sgf"
@@ -41,7 +41,7 @@ class MinizeroDataLoader:
         negative = torch.FloatTensor(
             self.negative).view(
                 py.get_batch_size(),
-                py.get_siamese_num_negatives(),
+                py.get_siamese_eval_num_negatives(),
                 self.board_channels,
                 py.get_nn_input_channel_height(),
                 py.get_nn_input_channel_width()).to(device)
@@ -84,7 +84,7 @@ def evaluate(model, testing_dataset, data_loader):
     # 10000 steps # TODO
     for i in range(1, 10000):
         anchor, positive, negative = data_loader.sample_data(model.device)
-        for n in range(py.get_siamese_num_negatives()):
+        for n in range(py.get_siamese_eval_num_negatives()):
             negative_n = negative[:, n, :, :, :]
             if negative_n.sum() == 0:  # fillter
                 continue
