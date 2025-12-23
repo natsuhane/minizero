@@ -135,4 +135,70 @@ public:
     inline int getRotateAction(int action_id, utils::Rotation rotation) const override { return getRotatePosition(action_id, rotation); };
 };
 
+// Phantom Go helper structures
+struct MoveInfo {
+    bool legal;
+    std::vector<int> captured_stones;
+};
+
+struct MoveEvent {
+    Player mover;
+    int pos;
+    std::vector<int> captured_stones;
+};
+
+struct SeqState {
+    std::vector<GoAction> seq;
+    GoHashKey hash;
+};
+
+struct NegativeBoard {
+    GoBitboard black;
+    GoBitboard white;
+};
+
+// Phantom Go helper functions
+GoEnv rebuildGoEnvToStep(const GoEnvLoader& env_loader, int target_pos);
+std::vector<GoEnv> rebuildFullHistory(const GoEnvLoader& env_loader, int target_pos);
+MoveInfo analyzeMove(const GoEnv& before, const GoEnv& after, const GoAction& action);
+std::vector<MoveEvent> buildMoveEvents(const std::vector<GoEnv>& history, const GoEnvLoader& env_loader);
+int countStonesOnBoard(const GoEnv& env, Player p);
+
+std::pair<std::unordered_set<int>, std::unordered_set<int>> computeMustSets(
+    int move_number,
+    Player perspective,
+    const std::vector<MoveEvent>& events,
+    const std::vector<GoEnv>& history);
+
+bool breaksSatisfiedMust(
+    const GoEnv& before, const GoEnv& after, const GoAction& a,
+    const std::unordered_set<int>& satisfied_black,
+    const std::unordered_set<int>& satisfied_white);
+
+// Phantom Go sampling functions
+std::vector<NegativeBoard> sampleMoveStoneNegativesBitboard(
+    const GoEnv& truth_env,
+    const std::unordered_set<int>& must_black,
+    const std::unordered_set<int>& must_white,
+    Player my_perspective,
+    size_t target_samples,
+    int max_move_distance);
+
+std::vector<SeqState> sampleInfoSetAtMove(
+    int board_size,
+    int move_number,
+    const std::unordered_set<int>& must_black,
+    const std::unordered_set<int>& must_white,
+    size_t target_samples,
+    Player my_perspective,
+    int target_black_count,
+    int target_white_count,
+    int max_total_attempts = 100);
+
+// Feature extraction
+std::size_t computeBoardHash(const GoBitboard& black_bb, const GoBitboard& white_bb, int board_area);
+std::vector<NegativeBoard> seqStatesToNegativesBitboard(const std::vector<SeqState>& info_set, int board_size, size_t max_num);
+std::vector<float> extractBoardStateFromBitboard(const GoEnv& ref_env, const GoBitboard& black_bb, const GoBitboard& white_bb, utils::Rotation rotation);
+std::vector<float> extractBoardState(const GoEnv& env, utils::Rotation rotation);
+
 } // namespace minizero::env::go
