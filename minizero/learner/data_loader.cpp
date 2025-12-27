@@ -235,12 +235,29 @@ int DataLoaderSharedData::getNextBatchIndex()
 std::pair<int, int> DataLoaderSharedData::getNextEnvPosIndex()
 {
     std::lock_guard<std::mutex> lock(mutex_);
+
+    // Check if env_loaders_ is empty
+    if (replay_buffer_.env_loaders_.empty()) {
+        return {-1, -1};
+    }
+
+    // Wrap around if env_index_ is out of bounds
+    if (env_index_ >= static_cast<int>(replay_buffer_.env_loaders_.size())) {
+        env_index_ = 0;
+        pos_index_ = 0;
+    }
+
     EnvironmentLoader& env_loader = replay_buffer_.env_loaders_[env_index_];
     const auto& action_pairs = env_loader.getActionPairs();
     if (pos_index_ >= static_cast<int>(action_pairs.size())) {
         // move to next environment
         env_index_++;
         pos_index_ = 0;
+
+        // Wrap around if we've gone through all environments
+        if (env_index_ >= static_cast<int>(replay_buffer_.env_loaders_.size())) {
+            env_index_ = 0;
+        }
     }
     return {env_index_, pos_index_++};
 }
@@ -286,6 +303,7 @@ bool DataLoaderThread::sampleData()
             setIIGTrainingData(batch_index);
         } else if (config::siamese_mode == "testing") {
             std::pair<int, int> p = getSharedData()->getNextEnvPosIndex();
+            if (p.first < 0 || p.second < 0) { return false; }
             setIIGTestingData(batch_index, p.first, p.second);
         } else {
             return false;
