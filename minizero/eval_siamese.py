@@ -80,19 +80,27 @@ class Model:
 
 def evaluate(model, testing_dataset, data_loader):
     data_loader.load_data(testing_dataset)
-    model.network.eval()
-    # 10000 steps # TODO
-    for i in range(1, 10000):
-        anchor, positive, negative = data_loader.sample_data(model.device)
-        for n in range(py.get_siamese_eval_num_negatives()):
-            negative_n = negative[:, n, :, :, :]
-            if negative_n.sum() == 0:  # fillter
-                continue
 
-            anchor_emb, positive_emb, negative_emb = model.network(anchor, positive, negative_n)
+    # Use train mode instead of eval mode for BatchNorm layers.
+    model.network.train()
+    # - In eval mode, BatchNorm uses pre-computed running_mean/running_var statistics
+    # - These running statistics were incorrectly accumulated during DataParallel training
+    #   (each GPU only sees 1/N of data, causing statistics to be unrepresentative)
+    # - In train mode, BatchNorm computes mean/var from the current batch, which is correct
+    # - torch.no_grad() ensures no gradient computation, so this is still inference-only
 
-            # Compute distance metrics
-            with torch.no_grad():
+    with torch.no_grad():
+        for i in range(1, 10000):
+            anchor, positive, negative = data_loader.sample_data(model.device)
+
+            for n in range(py.get_siamese_eval_num_negatives()):
+                negative_n = negative[:, n, :, :, :]
+                if negative_n.sum() == 0:  # fillter
+                    continue
+
+                anchor_emb, positive_emb, negative_emb = model.network(anchor, positive, negative_n)
+
+                # Compute distance metrics
                 d_ap = torch.norm(anchor_emb - positive_emb, dim=1)
                 d_an = torch.norm(anchor_emb - negative_emb, dim=1)
 
