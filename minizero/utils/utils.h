@@ -117,4 +117,35 @@ float stddev(const std::vector<T>& input)
     return std::sqrt(variance / (input.size() - 1));
 }
 
+inline std::vector<float> softmin(const std::vector<float>& distances, float temperature = 10.0f)
+{
+    if (distances.empty()) { return {}; }
+    if (distances.size() == 1) { return {1.0f}; }
+    if (temperature <= 0.0f) { temperature = 10.0f; }
+
+    // compute -d_i / t for each distance
+    std::vector<float> neg_scaled(distances.size());
+    for (size_t i = 0; i < distances.size(); ++i) {
+        neg_scaled[i] = -distances[i] / temperature;
+    }
+
+    // log-sum-exp trick for numerical stability
+    float max_val = *std::max_element(neg_scaled.begin(), neg_scaled.end());
+
+    std::vector<float> exp_vals(distances.size());
+    float sum_exp = 0.0f;
+    for (size_t i = 0; i < neg_scaled.size(); ++i) {
+        exp_vals[i] = std::exp(neg_scaled[i] - max_val);
+        sum_exp += exp_vals[i];
+    }
+
+    // normalize to get probability distribution
+    std::vector<float> probs(distances.size());
+    for (size_t i = 0; i < exp_vals.size(); ++i) {
+        probs[i] = exp_vals[i] / sum_exp;
+    }
+
+    return probs;
+}
+
 } // namespace minizero::utils
