@@ -342,6 +342,8 @@ void DataLoaderThread::setIIGTrainingData(int batch_index)
     std::copy(anchor.begin(), anchor.end(), getSharedData()->getDataPtr()->anchor_ + anchor.size() * batch_index);
     std::copy(positive.begin(), positive.end(), getSharedData()->getDataPtr()->positive_ + positive.size() * batch_index);
     std::copy(negative.begin(), negative.end(), getSharedData()->getDataPtr()->negative_ + negative.size() * batch_index);
+    getSharedData()->getDataPtr()->sampled_index_[2 * batch_index] = env_id;
+    getSharedData()->getDataPtr()->sampled_index_[2 * batch_index + 1] = pos;
 }
 
 void DataLoaderThread::setIIGTestingData(int batch_index, int env_id, int pos)
@@ -364,6 +366,8 @@ void DataLoaderThread::setIIGTestingData(int batch_index, int env_id, int pos)
     std::copy(anchor.begin(), anchor.end(), getSharedData()->getDataPtr()->anchor_ + anchor.size() * batch_index);
     std::copy(positive.begin(), positive.end(), getSharedData()->getDataPtr()->positive_ + positive.size() * batch_index);
     std::copy(negative.begin(), negative.end(), getSharedData()->getDataPtr()->negative_ + negative.size() * batch_index);
+    getSharedData()->getDataPtr()->sampled_index_[2 * batch_index] = env_id;
+    getSharedData()->getDataPtr()->sampled_index_[2 * batch_index + 1] = pos;
 }
 
 void DataLoaderThread::setAlphaZeroTrainingData(int batch_index)

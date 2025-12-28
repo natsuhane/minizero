@@ -2,9 +2,12 @@
 
 import sys
 import os
+import re
 import torch
 import torch.nn as nn
 import numpy as np
+import matplotlib.pyplot as plt
+from collections import defaultdict
 from minizero.network.py.create_network import create_network
 from tools.analysis import analysis
 import build.go.minizero_py as py
@@ -26,6 +29,7 @@ class MinizeroDataLoader:
         self.anchor = np.zeros(py.get_batch_size() * self.anchor_channels * py.get_nn_input_channel_height() * py.get_nn_input_channel_width(), dtype=np.float32)
         self.positive = np.zeros(py.get_batch_size() * self.board_channels * py.get_nn_input_channel_height() * py.get_nn_input_channel_width(), dtype=np.float32)
         self.negative = np.zeros(py.get_batch_size() * py.get_siamese_eval_num_negatives() * self.board_channels * py.get_nn_input_channel_height() * py.get_nn_input_channel_width(), dtype=np.float32)
+        self.sampled_index = np.zeros(py.get_batch_size() * 2, dtype=np.int32)
 
     def load_data(self, testing_dataset):
         file_name = f"{testing_dataset}/1.sgf"
@@ -34,7 +38,7 @@ class MinizeroDataLoader:
         self.data_list.append(file_name)
 
     def sample_data(self, device='cpu'):
-        self.data_loader.sample_iig_data(self.anchor, self.positive, self.negative)
+        self.data_loader.sample_iig_data(self.anchor, self.positive, self.negative, self.sampled_index)
         anchor = torch.FloatTensor(self.anchor).view(py.get_batch_size(), self.anchor_channels, py.get_nn_input_channel_height(), py.get_nn_input_channel_width()).to(device)
         positive = torch.FloatTensor(self.positive).view(py.get_batch_size(), self.board_channels, py.get_nn_input_channel_height(), py.get_nn_input_channel_width()).to(device)
         # multiple negatives
@@ -45,7 +49,9 @@ class MinizeroDataLoader:
                 self.board_channels,
                 py.get_nn_input_channel_height(),
                 py.get_nn_input_channel_width()).to(device)
-        return anchor, positive, negative
+        # move numbers (pos values at odd indices)
+        move_numbers = self.sampled_index[1::2].copy()
+        return anchor, positive, negative, move_numbers
 
 
 class Model:
@@ -78,7 +84,86 @@ class Model:
         self.network = nn.DataParallel(self.network)
 
 
-def evaluate(model, testing_dataset, data_loader):
+def bin_move_number(move_num, bin_size=10):
+    """Bin move numbers: 0-9 -> 0, 10-19 -> 10, etc."""
+    return (move_num // bin_size) * bin_size
+
+
+def plot_metrics_by_move(move_stats, output_dir):
+    """Generate success rate and margin charts binned by 10 moves."""
+    os.makedirs(output_dir, exist_ok=True)
+
+    # Sort bins
+    bins = sorted(move_stats.keys())
+    if not bins:
+        print("No data to plot.")
+        return
+
+    success_rates = [np.mean(move_stats[b]['successes']) for b in bins]
+    margins = [np.mean(move_stats[b]['margins']) for b in bins]
+
+    # Create bin labels: "0-9", "10-19", etc.
+    bin_labels = [f"{b}-{b+9}" for b in bins]
+
+    # Chart 1: Success Rate
+    plt.figure(figsize=(12, 8))
+    plt.bar(range(len(bins)), success_rates, tick_label=bin_labels, color='steelblue')
+    plt.xlabel('Move Number Range', fontsize=12)
+    plt.ylabel('Success Rate', fontsize=12)
+    plt.title('Success Rate by Move Number (Binned by 10)', fontsize=14)
+    plt.ylim(0, 1)
+    plt.xticks(rotation=45)
+    plt.grid(axis='y', alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(os.path.join(output_dir, 'success_rate_by_move.png'), dpi=150)
+    plt.close()
+    print(f"Saved: {output_dir}/success_rate_by_move.png")
+
+    # Chart 2: Margin
+    plt.figure(figsize=(12, 8))
+    plt.bar(range(len(bins)), margins, tick_label=bin_labels, color='coral')
+    plt.xlabel('Move Number Range', fontsize=12)
+    plt.ylabel('Average Margin (d_an - d_ap)', fontsize=12)
+    plt.title('Average Margin by Move Number (Binned by 10)', fontsize=14)
+    plt.axhline(y=1.0, color='red', linestyle='--', label='Threshold (1.0)')
+    plt.xticks(rotation=45)
+    plt.grid(axis='y', alpha=0.3)
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(os.path.join(output_dir, 'margin_by_move.png'), dpi=150)
+    plt.close()
+    print(f"Saved: {output_dir}/margin_by_move.png")
+
+
+def plot_from_log(log_path, output_dir):
+    """Parse eval.log and generate charts."""
+    if not os.path.exists(log_path):
+        print(f"Log file not found: {log_path}")
+        return
+
+    move_stats = defaultdict(lambda: {'margins': [], 'successes': []})
+
+    with open(log_path, 'r') as f:
+        for line in f:
+            # Parse: move:42 margin:1.234567 success:1
+            match = re.match(r'move:(\d+) margin:([-\d.]+) success:(\d)', line)
+            if match:
+                move = int(match.group(1))
+                margin = float(match.group(2))
+                success = int(match.group(3))
+
+                binned = bin_move_number(move)
+                move_stats[binned]['margins'].append(margin)
+                move_stats[binned]['successes'].append(success)
+
+    if not move_stats:
+        print("No data found in log file.")
+        return
+
+    plot_metrics_by_move(move_stats, output_dir)
+
+
+def evaluate(model, testing_dataset, data_loader, training_dir):
     data_loader.load_data(testing_dataset)
 
     # Use train mode instead of eval mode for BatchNorm layers.
@@ -89,33 +174,47 @@ def evaluate(model, testing_dataset, data_loader):
     # - In train mode, BatchNorm computes mean/var from the current batch, which is correct
     # - torch.no_grad() ensures no gradient computation, so this is still inference-only
 
-    with torch.no_grad():
-        for i in range(1, 10000):
-            anchor, positive, negative = data_loader.sample_data(model.device)
+    # Create output directory and log file
+    output_dir = f"{training_dir}/eval_analysis"
+    os.makedirs(output_dir, exist_ok=True)
+    log_path = os.path.join(output_dir, 'eval.log')
 
-            for n in range(py.get_siamese_eval_num_negatives()):
-                negative_n = negative[:, n, :, :, :]
-                if negative_n.sum() == 0:  # fillter
-                    continue
+    with open(log_path, 'w') as eval_log:
+        with torch.no_grad():
+            for i in range(1, 10000):
+                anchor, positive, negative, move_numbers = data_loader.sample_data(model.device)
 
-                anchor_emb, positive_emb, negative_emb = model.network(anchor, positive, negative_n)
+                for n in range(py.get_siamese_eval_num_negatives()):
+                    negative_n = negative[:, n, :, :, :]
+                    if negative_n.sum() == 0:  # filter
+                        continue
 
-                # Compute distance metrics
-                d_ap = torch.norm(anchor_emb - positive_emb, dim=1)
-                d_an = torch.norm(anchor_emb - negative_emb, dim=1)
+                    anchor_emb, positive_emb, negative_emb = model.network(anchor, positive, negative_n)
 
-                # distance difference
-                margin = d_an - d_ap
+                    # Compute distance metrics
+                    d_ap = torch.norm(anchor_emb - positive_emb, dim=1)
+                    d_an = torch.norm(anchor_emb - negative_emb, dim=1)
 
-                # Success rate (margin > 1.0)
-                success_rate = (margin > 1.0).float().mean().item()
+                    # distance difference
+                    margin = d_an - d_ap
 
-                # print
-                print(f"Step {i}, Negative {n}:")
-                print(f"  Margin (d_an - d_ap): {margin.mean().item():.4f}")
-                print(f"  Distance AP (d_ap): {d_ap.mean().item():.4f} ± {d_ap.std().item():.4f}")
-                print(f"  Distance AN (d_an): {d_an.mean().item():.4f} ± {d_an.std().item():.4f}")
-                print(f"  Success Rate: {success_rate:.4f}")
+                    # Write to log file (per-sample with move number)
+                    for b in range(len(move_numbers)):
+                        success = 1 if margin[b] > 1.0 else 0
+                        eval_log.write(f"move:{move_numbers[b]} margin:{margin[b].item():.6f} success:{success}\n")
+                    eval_log.flush()  # Ensure data is written immediately
+
+                    # Success rate (margin > 1.0)
+                    success_rate = (margin > 1.0).float().mean().item()
+
+                    # print progress
+                    print(f"Step {i}, Negative {n}:")
+                    print(f"  Margin (d_an - d_ap): {margin.mean().item():.4f}")
+                    print(f"  Distance AP (d_ap): {d_ap.mean().item():.4f} ± {d_ap.std().item():.4f}")
+                    print(f"  Distance AN (d_an): {d_an.mean().item():.4f} ± {d_an.std().item():.4f}")
+                    print(f"  Success Rate: {success_rate:.4f}")
+
+    print(f"\nLog saved to: {log_path}")
 
 
 def get_last_model_file(training_dir):
@@ -129,18 +228,36 @@ def get_last_model_file(training_dir):
 
 
 if __name__ == '__main__':
+    # Mode 1: Generate charts from existing log
+    # python eval_siamese.py --plot training_dir
+    if len(sys.argv) == 3 and sys.argv[1] == '--plot':
+        training_dir = sys.argv[2]
+        output_dir = f"{training_dir}/eval_analysis"
+        log_path = os.path.join(output_dir, 'eval.log')
+        print(f"Generating charts from: {log_path}")
+        plot_from_log(log_path, output_dir)
+        print(f"Charts saved to: {output_dir}")
+        exit(0)
+
+    # Mode 2: Run evaluation (writes log + generates charts)
+    # python eval_siamese.py game_type training_dir conf_file testing_dataset
     if len(sys.argv) == 5:
         game_type = sys.argv[1]
         training_dir = sys.argv[2]
         conf_file_name = sys.argv[3]
         testing_dataset = sys.argv[4]
     else:
-        eprint("python eval_siamese.py game_type training_dir conf_file testing_dataset")
+        eprint("Usage:")
+        eprint("  python eval_siamese.py game_type training_dir conf_file testing_dataset")
+        eprint("  python eval_siamese.py --plot training_dir")
         exit(0)
 
     py.load_config_file(conf_file_name)
     data_loader = MinizeroDataLoader(conf_file_name)
     model = Model()
+
+    output_dir = f"{training_dir}/eval_analysis"
+    log_path = os.path.join(output_dir, 'eval.log')
 
     try:
         model_file = get_last_model_file(training_dir)
@@ -148,7 +265,12 @@ if __name__ == '__main__':
         if model.network is None:
             model.load_model(training_dir, model_file)
 
-        evaluate(model, testing_dataset, data_loader)
+        evaluate(model, testing_dataset, data_loader, training_dir)
 
     except (KeyboardInterrupt, EOFError) as e:
-        eprint("Evaluation interrupted.")
+        eprint("\nEvaluation interrupted.")
+
+    # Generate charts from log (works even if interrupted)
+    print("\nGenerating charts from log...")
+    plot_from_log(log_path, output_dir)
+    print(f"Charts saved to: {output_dir}")

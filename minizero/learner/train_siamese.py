@@ -45,6 +45,7 @@ class MinizeroDataLoader:
         self.anchor = np.zeros(py.get_batch_size() * self.anchor_channels * py.get_nn_input_channel_height() * py.get_nn_input_channel_width(), dtype=np.float32)
         self.positive = np.zeros(py.get_batch_size() * self.board_channels * py.get_nn_input_channel_height() * py.get_nn_input_channel_width(), dtype=np.float32)
         self.negative = np.zeros(py.get_batch_size() * self.board_channels * py.get_nn_input_channel_height() * py.get_nn_input_channel_width(), dtype=np.float32)
+        self.sampled_index = np.zeros(py.get_batch_size() * 2, dtype=np.int32)
 
     def load_data(self, training_dir, start_iter, end_iter):
         for i in range(start_iter, end_iter + 1):
@@ -57,7 +58,7 @@ class MinizeroDataLoader:
                 self.data_list.pop(0)
 
     def sample_data(self, device='cpu'):
-        self.data_loader.sample_iig_data(self.anchor, self.positive, self.negative)
+        self.data_loader.sample_iig_data(self.anchor, self.positive, self.negative, self.sampled_index)
         anchor = torch.FloatTensor(self.anchor).view(py.get_batch_size(), self.anchor_channels, py.get_nn_input_channel_height(), py.get_nn_input_channel_width()).to(device)
         positive = torch.FloatTensor(self.positive).view(py.get_batch_size(), self.board_channels, py.get_nn_input_channel_height(), py.get_nn_input_channel_width()).to(device)
         negative = torch.FloatTensor(self.negative).view(py.get_batch_size(), self.board_channels, py.get_nn_input_channel_height(), py.get_nn_input_channel_width()).to(device)

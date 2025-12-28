@@ -19,6 +19,13 @@
   /sgf-test
   --1.sgf
   ```
+* Output: `{training_dir}/eval_analysis/`
+  * `eval.log` - per-sample metrics (move number, margin, success)
+  * `success_rate_by_move.png` - success rate chart binned by 10 moves
+  * `margin_by_move.png` - margin chart binned by 10 moves
+* Regenerate charts from existing log (without re-running evaluation):
+  * `python minizero/eval_siamese.py --plot training_dir`
+  * Example: `python minizero/eval_siamese.py --plot go_9x9_sz_1bx256_n50-ed3882-dirty`
   
 ## To be completed
 * `./scripts/train-siamese.sh go [config file] [end iteration] --link_sgf [sgf folder]`
