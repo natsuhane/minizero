@@ -1,4 +1,12 @@
 # PhantomGo branch
+
+## Training data
+### Generate from Go model self-play
+* `./build/go/minizero_go -mode run -conf_file go.cfg`
+  * siamese_input_record_file_name = sp data sgf
+  * nn_file_name = Go model weight
+* Output: Add selected negative boards' ID to sgf (tag "N")
+
 ## Train siamese
 * Start a container first: `./scripts/start-container.sh`
 * `./scripts/zero-server.sh go [config file] [end iteration] --link_sgf [sgf folder] --op_executable_file minizero/learner/train_siamese.py`

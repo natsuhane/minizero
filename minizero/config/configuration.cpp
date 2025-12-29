@@ -76,6 +76,11 @@ std::string siamese_sampling_strategy = "random";
 float siamese_move_stone_ratio = 0.8f;
 bool siamese_debug_output = false;
 int siamese_max_move_distance = 0;
+float siamese_value_threshold = 0.1f;
+int siamese_max_random_perturbations = 1000;
+int siamese_perturbation_warmup = 100;
+std::string siamese_input_record_file_name = "";
+std::string siamese_output_record_file_name = "";
 
 // environment parameters
 int env_board_size = 0;
@@ -168,6 +173,11 @@ void setConfiguration(ConfigureLoader& cl)
     cl.addParameter("siamese_move_stone_ratio", siamese_move_stone_ratio, "the ratio of move_stone samples in hybrid mode (0.0-1.0)", "Network");
     cl.addParameter("siamese_debug_output", siamese_debug_output, "whether to print debug board visualization output", "Network");
     cl.addParameter("siamese_max_move_distance", siamese_max_move_distance, "the maximum Manhattan distance for moving stones", "Network");
+    cl.addParameter("siamese_value_threshold", siamese_value_threshold, "the threshold to filter possible negative boards by value", "Network");
+    cl.addParameter("siamese_max_random_perturbations", siamese_max_random_perturbations, "the number of selecting a stone and move it to all possible surrounding positions", "Network");
+    cl.addParameter("siamese_perturbation_warmup", siamese_perturbation_warmup, "the number of warmup steps when doing perturbation (random move 1 piece)", "Network");
+    cl.addParameter("siamese_input_record_file_name", siamese_input_record_file_name, "for generate dataset, the directory of input selfplay data", "Network");
+    cl.addParameter("siamese_output_record_file_name", siamese_output_record_file_name, "for generate dataset, the directory of output file", "Network");
 
     // environment parameters
     cl.addParameter("env_board_size", env_board_size, "the size of board", "Environment");

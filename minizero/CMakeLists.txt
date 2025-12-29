@@ -7,6 +7,7 @@ target_link_libraries(
     config
     console
     environment
+    iig_data_generator
     network
     utils
     zero

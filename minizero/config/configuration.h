@@ -78,6 +78,11 @@ extern std::string siamese_sampling_strategy;
 extern float siamese_move_stone_ratio;
 extern bool siamese_debug_output;
 extern int siamese_max_move_distance;
+extern float siamese_value_threshold;
+extern int siamese_max_random_perturbations;
+extern int siamese_perturbation_warmup;
+extern std::string siamese_input_record_file_name;
+extern std::string siamese_output_record_file_name;
 
 // environment parameters
 extern int env_board_size;

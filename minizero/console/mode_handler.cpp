@@ -2,6 +2,7 @@
 #include "actor_group.h"
 #include "console.h"
 #include "git_info.h"
+#include "iig_data_generator.h"
 #include "obs_recover.h"
 #include "obs_remover.h"
 #include "ostream_redirector.h"
@@ -23,6 +24,7 @@ ModeHandler::ModeHandler()
     RegisterFunction("env_test", this, &ModeHandler::runEnvTest);
     RegisterFunction("remove_obs", this, &ModeHandler::runRemoveObs);
     RegisterFunction("recover_obs", this, &ModeHandler::runRecoverObs);
+    RegisterFunction("run", this, &ModeHandler::runDataSet);
 }
 
 void ModeHandler::run(int argc, char* argv[])
@@ -200,6 +202,13 @@ void ModeHandler::runRecoverObs()
 #else
     std::cout << "Currently, only support recover observation for atari games" << std::endl;
 #endif
+}
+
+void ModeHandler::runDataSet()
+{
+    iig_data_generator::IIGDataGenerator data_generator;
+    data_generator.run();
+    return;
 }
 
 } // namespace minizero::console
