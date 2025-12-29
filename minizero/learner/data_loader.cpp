@@ -1,17 +1,13 @@
 #include "data_loader.h"
 #include "configuration.h"
 #include "environment.h"
-#include "go.h"
 #include "random.h"
 #include "rotation.h"
 #include <algorithm>
 #include <deque>
 #include <fstream>
 #include <iostream>
-#include <map>
 #include <numeric>
-#include <set>
-#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -19,110 +15,6 @@ namespace minizero::learner {
 
 using namespace minizero;
 using namespace minizero::utils;
-using namespace minizero::env::go;
-using minizero::env::Player;
-
-std::vector<float> extractAnchorFeatures(
-    const EnvironmentLoader& env_loader,
-    int target_pos,
-    utils::Rotation rotation)
-{
-    const int N = env_loader.getBoardSize();
-    const int H = 12; // history length
-    const int C = 6;  // channels per timestep
-    const int PASS = N * N;
-
-    std::vector<float> anchor;
-    anchor.reserve(H * C * N * N);
-
-    std::vector<GoEnv> history = rebuildFullHistory(env_loader, target_pos);
-    const auto& action_pairs = env_loader.getActionPairs();
-    std::vector<MoveEvent> events = buildMoveEvents(history, env_loader);
-
-    Player my_perspective = (target_pos > 0 && target_pos <= static_cast<int>(action_pairs.size())) ? action_pairs[target_pos - 1].first.nextPlayer() : Player::kPlayer1;
-
-    for (int t = 0; t < H; ++t) {
-        int step_idx = target_pos - H + 1 + t;
-
-        if (step_idx < 0 || step_idx >= static_cast<int>(history.size())) {
-            for (int c = 0; c < C; ++c) {
-                for (int pos = 0; pos < N * N; ++pos) {
-                    anchor.push_back(0.0f);
-                }
-            }
-            continue;
-        }
-
-        const GoEnv& env_at_t = history[step_idx];
-        const auto& my_stones = env_at_t.getStoneBitboard().get(my_perspective);
-
-        // get action if it exists
-        bool is_pass = false;
-        std::vector<int> captured_this_turn;
-        if (step_idx > 0 && step_idx - 1 < static_cast<int>(events.size())) {
-            const auto& ev = events[step_idx - 1];
-            is_pass = (ev.pos == PASS);
-            captured_this_turn = ev.captured_stones;
-        }
-
-        // Channel 0: self_stones
-        for (int pos = 0; pos < N * N; ++pos) {
-            int rot_pos = env_at_t.getRotatePosition(pos, utils::reversed_rotation[static_cast<int>(rotation)]);
-            anchor.push_back(my_stones.test(rot_pos) ? 1.0f : 0.0f);
-        }
-
-        // Channel 1: illegal_attempts（all 0s temporarily）
-        for (int pos = 0; pos < N * N; ++pos) {
-            anchor.push_back(0.0f);
-        }
-
-        // Channel 2: legal_move
-        for (int pos = 0; pos < N * N; ++pos) {
-            int rot_pos = env_at_t.getRotatePosition(pos, utils::reversed_rotation[static_cast<int>(rotation)]);
-            bool was_last_move = false;
-            if (step_idx > 0 && step_idx - 1 < static_cast<int>(action_pairs.size())) {
-                int last_action_id = action_pairs[step_idx - 1].first.getActionID();
-                was_last_move = (rot_pos == last_action_id && last_action_id != PASS);
-            }
-            anchor.push_back(was_last_move ? 1.0f : 0.0f);
-        }
-
-        // Channel 3: captured_black
-        for (int pos = 0; pos < N * N; ++pos) {
-            int rot_pos = env_at_t.getRotatePosition(pos, utils::reversed_rotation[static_cast<int>(rotation)]);
-            bool was_captured_black = false;
-            for (int c : captured_this_turn) {
-                if (c == rot_pos && step_idx > 0) {
-                    const GoEnv& prev_env = history[step_idx - 1];
-                    was_captured_black = (prev_env.getGrid(c).getPlayer() == Player::kPlayer1);
-                    break;
-                }
-            }
-            anchor.push_back(was_captured_black ? 1.0f : 0.0f);
-        }
-
-        // Channel 4: captured_white
-        for (int pos = 0; pos < N * N; ++pos) {
-            int rot_pos = env_at_t.getRotatePosition(pos, utils::reversed_rotation[static_cast<int>(rotation)]);
-            bool was_captured_white = false;
-            for (int c : captured_this_turn) {
-                if (c == rot_pos && step_idx > 0) {
-                    const GoEnv& prev_env = history[step_idx - 1];
-                    was_captured_white = (prev_env.getGrid(c).getPlayer() == Player::kPlayer2);
-                    break;
-                }
-            }
-            anchor.push_back(was_captured_white ? 1.0f : 0.0f);
-        }
-
-        // Channel 5: is_pass
-        for (int pos = 0; pos < N * N; ++pos) {
-            anchor.push_back(is_pass ? 1.0f : 0.0f);
-        }
-    }
-
-    return anchor; // H * C * N * N floats
-}
 
 ReplayBuffer::ReplayBuffer()
 {
@@ -326,17 +218,13 @@ void DataLoaderThread::setIIGTrainingData(int batch_index)
     int env_id = p.first, pos = p.second;
 
     // IIG training data
+    const EnvironmentLoader& env_loader = getSharedData()->replay_buffer_.env_loaders_[env_id];
     Rotation rotation = static_cast<Rotation>(Random::randInt() % static_cast<int>(Rotation::kRotateSize));
-    std::vector<float> anchor = getAnchor(env_id, pos, rotation);
-    std::vector<float> positive = getPositive(env_id, pos, rotation);
+    std::vector<float> anchor = env_loader.getAnchor(pos, rotation);
+    std::vector<float> positive = env_loader.getPositive(pos, rotation);
 
     int train_candidates = std::max(config::siamese_num_negatives, 1);
-    std::vector<float> negative = getNegative(
-        env_id,
-        pos,
-        rotation,
-        /*num_outputs=*/1,
-        /*num_candidates=*/train_candidates);
+    std::vector<float> negative = env_loader.getNegative(pos, rotation, 1, train_candidates);
 
     // write data to data_ptr
     std::copy(anchor.begin(), anchor.end(), getSharedData()->getDataPtr()->anchor_ + anchor.size() * batch_index);
@@ -349,18 +237,14 @@ void DataLoaderThread::setIIGTrainingData(int batch_index)
 void DataLoaderThread::setIIGTestingData(int batch_index, int env_id, int pos)
 {
     // get next position
+    const EnvironmentLoader& env_loader = getSharedData()->replay_buffer_.env_loaders_[env_id];
     Rotation rotation = static_cast<Rotation>(Random::randInt() % static_cast<int>(Rotation::kRotateSize));
-    std::vector<float> anchor = getAnchor(env_id, pos, rotation);
-    std::vector<float> positive = getPositive(env_id, pos, rotation);
+    std::vector<float> anchor = env_loader.getAnchor(pos, rotation);
+    std::vector<float> positive = env_loader.getPositive(pos, rotation);
 
     int eval_outputs = std::max(config::siamese_eval_num_negatives, 1);
     int eval_candidates = eval_outputs;
-    std::vector<float> negative = getNegative(
-        env_id,
-        pos,
-        rotation,
-        /*num_outputs=*/eval_outputs,
-        /*num_candidates=*/eval_candidates);
+    std::vector<float> negative = env_loader.getNegative(pos, rotation, eval_outputs, eval_candidates);
 
     // write data to data_ptr
     std::copy(anchor.begin(), anchor.end(), getSharedData()->getDataPtr()->anchor_ + anchor.size() * batch_index);
@@ -436,215 +320,6 @@ void DataLoaderThread::setMuZeroTrainingData(int batch_index)
     std::copy(policy.begin(), policy.end(), getSharedData()->getDataPtr()->policy_ + policy.size() * batch_index);
     std::copy(value.begin(), value.end(), getSharedData()->getDataPtr()->value_ + value.size() * batch_index);
     std::copy(reward.begin(), reward.end(), getSharedData()->getDataPtr()->reward_ + reward.size() * batch_index);
-}
-
-std::vector<float> DataLoaderThread::getAnchor(int env_id, int pos, utils::Rotation rotation)
-{
-    const EnvironmentLoader& env_loader = getSharedData()->replay_buffer_.env_loaders_[env_id];
-    return extractAnchorFeatures(env_loader, pos, rotation);
-}
-
-std::vector<float> DataLoaderThread::getPositive(int env_id, int pos, utils::Rotation rotation)
-{
-    const EnvironmentLoader& env_loader = getSharedData()->replay_buffer_.env_loaders_[env_id];
-    GoEnv env = rebuildGoEnvToStep(env_loader, pos);
-    return extractBoardState(env, rotation);
-}
-
-std::vector<float> DataLoaderThread::getNegative(
-    int env_id,
-    int pos,
-    utils::Rotation rotation,
-    int num_outputs,
-    int num_candidates)
-{
-    assert(num_candidates >= num_outputs && "num_candidates must be >= num_outputs");
-
-    const EnvironmentLoader& env_loader = getSharedData()->replay_buffer_.env_loaders_[env_id];
-    const int board_size = env_loader.getBoardSize();
-    const int board_area = board_size * board_size;
-
-    // Rebuild history & ground truth
-    std::vector<GoEnv> history = rebuildFullHistory(env_loader, pos);
-    const GoEnv& truth_env = history[std::min(pos, static_cast<int>(history.size()) - 1)];
-
-    const auto& truth_black_bb = truth_env.getStoneBitboard().get(Player::kPlayer1);
-    const auto& truth_white_bb = truth_env.getStoneBitboard().get(Player::kPlayer2);
-    std::size_t truth_board_hash = computeBoardHash(truth_black_bb, truth_white_bb, board_area);
-
-    // calculate MUST
-    std::vector<MoveEvent> events = buildMoveEvents(history, env_loader);
-
-    Player my_perspective =
-        (pos > 0 && pos <= static_cast<int>(env_loader.getActionPairs().size()))
-            ? env_loader.getActionPairs()[pos - 1].first.nextPlayer()
-            : Player::kPlayer1;
-
-    auto [must_black, must_white] =
-        computeMustSets(pos, my_perspective, events, history);
-
-    int target_black = countStonesOnBoard(truth_env, Player::kPlayer1);
-    int target_white = countStonesOnBoard(truth_env, Player::kPlayer2);
-
-    // generate candidate negatives（in bitboard)
-    std::vector<NegativeBoard> candidate_negatives;
-
-    if (config::siamese_sampling_strategy == "move_stone") {
-        candidate_negatives = sampleMoveStoneNegativesBitboard(
-            truth_env,
-            must_black,
-            must_white,
-            my_perspective,
-            static_cast<size_t>(num_candidates),
-            config::siamese_max_move_distance);
-
-    } else if (config::siamese_sampling_strategy == "random") {
-        auto info_set = sampleInfoSetAtMove(
-            board_size,
-            pos,
-            must_black,
-            must_white,
-            num_candidates,
-            my_perspective,
-            target_black,
-            target_white);
-        candidate_negatives = seqStatesToNegativesBitboard(
-            info_set,
-            board_size,
-            static_cast<size_t>(num_candidates));
-
-    } else if (config::siamese_sampling_strategy == "hybrid") {
-        size_t move_stone_count = static_cast<size_t>(
-            num_candidates *
-            config::siamese_move_stone_ratio);
-        size_t random_count =
-            num_candidates - move_stone_count;
-
-        auto move_samples = sampleMoveStoneNegativesBitboard(
-            truth_env,
-            must_black,
-            must_white,
-            my_perspective,
-            move_stone_count,
-            config::siamese_max_move_distance);
-
-        auto random_info_set = sampleInfoSetAtMove(
-            board_size,
-            pos,
-            must_black,
-            must_white,
-            static_cast<size_t>(random_count),
-            my_perspective,
-            target_black,
-            target_white);
-
-        auto random_samples = seqStatesToNegativesBitboard(
-            random_info_set,
-            board_size,
-            random_count);
-
-        candidate_negatives.reserve(move_samples.size() + random_samples.size());
-        candidate_negatives.insert(candidate_negatives.end(),
-                                   move_samples.begin(),
-                                   move_samples.end());
-        candidate_negatives.insert(candidate_negatives.end(),
-                                   random_samples.begin(),
-                                   random_samples.end());
-
-    } else {
-        std::cerr << "[WARNING] Unknown sampling strategy: "
-                  << config::siamese_sampling_strategy
-                  << ". Falling back to random." << std::endl;
-        auto info_set = sampleInfoSetAtMove(
-            board_size,
-            pos,
-            must_black,
-            must_white,
-            num_candidates,
-            my_perspective,
-            target_black,
-            target_white);
-        candidate_negatives = seqStatesToNegativesBitboard(
-            info_set,
-            board_size,
-            static_cast<size_t>(num_candidates));
-    }
-
-    if (candidate_negatives.empty()) {
-        return std::vector<float>();
-    }
-
-    // hash
-    std::unordered_set<std::size_t> seen;
-    seen.insert(truth_board_hash);
-
-    std::vector<NegativeBoard> negatives;
-    negatives.reserve(std::min<int>(num_outputs,
-                                    static_cast<int>(candidate_negatives.size())));
-
-    for (const auto& nb : candidate_negatives) {
-        if (static_cast<int>(negatives.size()) >= num_outputs) break;
-        std::size_t h = computeBoardHash(nb.black, nb.white, board_area);
-        if (!seen.insert(h).second) continue;
-        negatives.push_back(nb);
-    }
-
-    if (negatives.empty()) {
-        return std::vector<float>();
-    }
-
-    // Debug
-    static std::atomic<int> sample_count{0};
-    int current_sample = ++sample_count;
-
-    if (config::siamese_debug_output &&
-        (current_sample <= 3 || current_sample % 100 == 0)) {
-        std::cerr << "\n=== Negative Sampling (Sample #"
-                  << current_sample << ") ===\n";
-
-        std::cerr << "\n[POSITIVE] Ground Truth Board:\n";
-        std::cerr << truth_env.toString() << std::endl;
-
-        const auto& nb = negatives.front();
-        std::cerr << "\n[NEGATIVE] Sampled Board (bitboard view):\n";
-
-        for (int row = board_size - 1; row >= 0; --row) {
-            for (int col = 0; col < board_size; ++col) {
-                int p = row * board_size + col;
-
-                char ch = '.';
-                if (nb.black.test(p))
-                    ch = 'X';
-                else if (nb.white.test(p))
-                    ch = 'O';
-
-                std::cerr << ch << ' ';
-            }
-            std::cerr << '\n';
-        }
-        std::cerr << std::endl;
-
-        std::cerr << "=====================================\n\n";
-    }
-
-    // Construct the tensor for network
-    std::vector<float> result;
-    result.reserve(num_outputs * 2 * board_area);
-
-    for (const auto& nb : negatives) {
-        std::vector<float> board_state =
-            extractBoardStateFromBitboard(truth_env, nb.black, nb.white, rotation);
-        result.insert(result.end(), board_state.begin(), board_state.end());
-    }
-
-    // fill up to num_outputs
-    int produced = static_cast<int>(negatives.size());
-    while (produced < num_outputs) {
-        result.insert(result.end(), 2 * board_area, 0.0f);
-        ++produced;
-    }
-
-    return result;
 }
 
 DataLoader::DataLoader(const std::string& conf_file_name)

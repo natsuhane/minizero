@@ -133,6 +133,11 @@ public:
     inline int getPolicySize() const override { return getBoardSize() * getBoardSize() + 1; }
     inline int getRotatePosition(int position, utils::Rotation rotation) const override { return utils::getPositionByRotating(rotation, position, getBoardSize()); };
     inline int getRotateAction(int action_id, utils::Rotation rotation) const override { return getRotatePosition(action_id, rotation); };
+
+    // Siamese learning methods
+    std::vector<float> getAnchor(int pos, utils::Rotation rotation = utils::Rotation::kRotationNone) const;
+    std::vector<float> getPositive(int pos, utils::Rotation rotation = utils::Rotation::kRotationNone) const;
+    std::vector<float> getNegative(int pos, utils::Rotation rotation, int num_outputs, int num_candidates) const;
 };
 
 // Phantom Go helper structures
