@@ -90,7 +90,7 @@ def bin_move_number(move_num, bin_size=10):
 
 
 def plot_metrics_by_move(move_stats, output_dir):
-    """Generate success rate and margin charts binned by 10 moves."""
+    """Generate success rate, margin, and loss charts binned by 10 steps."""
     os.makedirs(output_dir, exist_ok=True)
 
     # Sort bins
@@ -101,38 +101,62 @@ def plot_metrics_by_move(move_stats, output_dir):
 
     success_rates = [np.mean(move_stats[b]['successes']) for b in bins]
     margins = [np.mean(move_stats[b]['margins']) for b in bins]
+    # Compute loss: triplet loss = max(0, 1.0 - margin)
+    losses = [np.mean([max(0, 1.0 - m) for m in move_stats[b]['margins']]) for b in bins]
 
-    # Create bin labels: "0-9", "10-19", etc.
-    bin_labels = [f"{b}-{b+9}" for b in bins]
+    # Compute overall metrics (across all bins)
+    all_successes = [s for b in bins for s in move_stats[b]['successes']]
+    all_margins = [m for b in bins for m in move_stats[b]['margins']]
+    overall_success_rate = np.mean(all_successes)
+    overall_margin = np.mean(all_margins)
+    overall_loss = np.mean([max(0, 1.0 - m) for m in all_margins])
 
     # Chart 1: Success Rate
     plt.figure(figsize=(12, 8))
-    plt.bar(range(len(bins)), success_rates, tick_label=bin_labels, color='steelblue')
-    plt.xlabel('Move Number Range', fontsize=12)
+    plt.plot(bins, success_rates, marker='o', linewidth=2, color='steelblue')
+    plt.axhline(y=overall_success_rate, color='gray', linestyle='--',
+                label=f'Overall: {overall_success_rate:.4f}')
+    plt.xlabel('Step', fontsize=12)
     plt.ylabel('Success Rate', fontsize=12)
-    plt.title('Success Rate by Move Number (Binned by 10)', fontsize=14)
+    plt.title('Success Rate by Step (Binned by 10)', fontsize=14)
     plt.ylim(0, 1)
-    plt.xticks(rotation=45)
-    plt.grid(axis='y', alpha=0.3)
+    plt.grid(True, alpha=0.3)
+    plt.legend()
     plt.tight_layout()
-    plt.savefig(os.path.join(output_dir, 'success_rate_by_move.png'), dpi=150)
+    plt.savefig(os.path.join(output_dir, 'success_rate_by_step.png'), dpi=150)
     plt.close()
-    print(f"Saved: {output_dir}/success_rate_by_move.png")
+    print(f"Saved: {output_dir}/success_rate_by_step.png")
 
     # Chart 2: Margin
     plt.figure(figsize=(12, 8))
-    plt.bar(range(len(bins)), margins, tick_label=bin_labels, color='coral')
-    plt.xlabel('Move Number Range', fontsize=12)
-    plt.ylabel('Average Margin (d_an - d_ap)', fontsize=12)
-    plt.title('Average Margin by Move Number (Binned by 10)', fontsize=14)
+    plt.plot(bins, margins, marker='o', linewidth=2, color='coral')
     plt.axhline(y=1.0, color='red', linestyle='--', label='Threshold (1.0)')
-    plt.xticks(rotation=45)
-    plt.grid(axis='y', alpha=0.3)
+    plt.axhline(y=overall_margin, color='gray', linestyle='--',
+                label=f'Overall: {overall_margin:.4f}')
+    plt.xlabel('Step', fontsize=12)
+    plt.ylabel('Average Margin (d_an - d_ap)', fontsize=12)
+    plt.title('Average Margin by Step (Binned by 10)', fontsize=14)
+    plt.grid(True, alpha=0.3)
     plt.legend()
     plt.tight_layout()
-    plt.savefig(os.path.join(output_dir, 'margin_by_move.png'), dpi=150)
+    plt.savefig(os.path.join(output_dir, 'margin_by_step.png'), dpi=150)
     plt.close()
-    print(f"Saved: {output_dir}/margin_by_move.png")
+    print(f"Saved: {output_dir}/margin_by_step.png")
+
+    # Chart 3: Loss
+    plt.figure(figsize=(12, 8))
+    plt.plot(bins, losses, marker='o', linewidth=2, color='green')
+    plt.axhline(y=overall_loss, color='gray', linestyle='--',
+                label=f'Overall: {overall_loss:.4f}')
+    plt.xlabel('Step', fontsize=12)
+    plt.ylabel('Average Loss', fontsize=12)
+    plt.title('Triplet Loss by Step (Binned by 10)', fontsize=14)
+    plt.grid(True, alpha=0.3)
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(os.path.join(output_dir, 'loss_by_step.png'), dpi=150)
+    plt.close()
+    print(f"Saved: {output_dir}/loss_by_step.png")
 
 
 def plot_from_log(log_path, output_dir):

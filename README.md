@@ -28,9 +28,10 @@
   --1.sgf
   ```
 * Output: `{training_dir}/eval_analysis/`
-  * `eval.log` - per-sample metrics (move number, margin, success)
-  * `success_rate_by_move.png` - success rate chart binned by 10 moves
-  * `margin_by_move.png` - margin chart binned by 10 moves
+  * `eval.log` - per-sample metrics (step, margin, success)
+  * `success_rate_by_step.png` - success rate chart binned by 10 steps
+  * `margin_by_step.png` - margin chart binned by 10 steps
+  * `loss_by_step.png` - triplet loss chart binned by 10 steps
 * Regenerate charts from existing log (without re-running evaluation):
   * `python minizero/eval_siamese.py --plot training_dir`
   * Example: `python minizero/eval_siamese.py --plot go_9x9_sz_1bx256_n50-ed3882-dirty`
