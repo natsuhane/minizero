@@ -40,7 +40,7 @@ class MinizeroDataLoader:
         # allocate memory
 
         self.anchor_channels = 72
-        self.board_channels = 2
+        self.board_channels = 4 # black piece, white piece, black's turn?, white's turn?
 
         self.anchor = np.zeros(py.get_batch_size() * self.anchor_channels * py.get_nn_input_channel_height() * py.get_nn_input_channel_width(), dtype=np.float32)
         self.positive = np.zeros(py.get_batch_size() * self.board_channels * py.get_nn_input_channel_height() * py.get_nn_input_channel_width(), dtype=np.float32)

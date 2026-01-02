@@ -1329,7 +1329,15 @@ std::vector<float> extractBoardState(const GoEnv& env, utils::Rotation rotation)
         board_state.push_back(env.getStoneBitboard().get(Player::kPlayer2).test(rot_pos) ? 1.0f : 0.0f);
     }
 
-    return board_state; // 2 * N * N floats
+    // Channel 2: Black's turn ?
+    const float black_turn = (env.getTurn() == Player::kPlayer1) ? 1.0f : 0.0f;
+    board_state.insert(board_state.end(), N * N, black_turn);
+
+    // Channel 3: White's turn ?
+    const float white_turn = (env.getTurn() == Player::kPlayer2) ? 1.0f : 0.0f;
+    board_state.insert(board_state.end(), N * N, white_turn);
+
+    return board_state; // 4 * N * N floats
 }
 
 // ========== GoEnvLoader Siamese Learning Methods ==========
@@ -1441,195 +1449,124 @@ std::vector<float> GoEnvLoader::getPositive(int pos, utils::Rotation rotation) c
     return extractBoardState(env, rotation);
 }
 
-std::vector<float> GoEnvLoader::getNegative(int pos, utils::Rotation rotation,
-                                            int num_outputs, int num_candidates) const
+std::vector<float> GoEnvLoader::getNegative(int pos, utils::Rotation rotation, int index /* = -1*/) const
 {
-    assert(num_candidates >= num_outputs && "num_candidates must be >= num_outputs");
+    GoEnv env;
+    const auto& action_pairs = getActionPairs();
+    for (int i = 0; i < pos; ++i) { env.act(action_pairs[i].first); }
 
-    const int board_size = getBoardSize();
-    const int board_area = board_size * board_size;
+    auto neg_bitboards = generateNegativeBitboards(env, (index > 0 ? index : (utils::Random::randInt() % config::siamese_max_random_perturbations)), false);
+    if (neg_bitboards.empty()) {
+        return {};
+    }
+    return bitboardToFeature(neg_bitboards[0], env.getTurn(), rotation, false);
+}
 
-    // Rebuild history & ground truth
-    std::vector<GoEnv> history = rebuildFullHistory(*this, pos);
-    const GoEnv& truth_env = history[std::min(pos, static_cast<int>(history.size()) - 1)];
+std::vector<env::GamePair<env::go::GoBitboard>> GoEnvLoader::generateNegativeBitboards(const GoEnv& env, int index, bool save_all /* = false*/) const
+{
+    std::vector<env::GamePair<env::go::GoBitboard>> outputs;
+    env::GamePair<env::go::GoBitboard> stone_bitboard = env.getStoneBitboard();
+    env::go::GoBitboard opp_bitboard = stone_bitboard.get(env::getNextPlayer(env.getTurn(), 2)); // 361 bit
 
-    const auto& truth_black_bb = truth_env.getStoneBitboard().get(Player::kPlayer1);
-    const auto& truth_white_bb = truth_env.getStoneBitboard().get(Player::kPlayer2);
-    std::size_t truth_board_hash = computeBoardHash(truth_black_bb, truth_white_bb, board_area);
-
-    // calculate MUST
-    std::vector<MoveEvent> events = buildMoveEvents(history, *this);
-
-    Player my_perspective =
-        (pos > 0 && pos <= static_cast<int>(getActionPairs().size()))
-            ? getActionPairs()[pos - 1].first.nextPlayer()
-            : Player::kPlayer1;
-
-    auto [must_black, must_white] =
-        computeMustSets(pos, my_perspective, events, history);
-
-    int target_black = countStonesOnBoard(truth_env, Player::kPlayer1);
-    int target_white = countStonesOnBoard(truth_env, Player::kPlayer2);
-
-    // generate candidate negatives (in bitboard)
-    std::vector<NegativeBoard> candidate_negatives;
-
-    if (config::siamese_sampling_strategy == "move_stone") {
-        candidate_negatives = sampleMoveStoneNegativesBitboard(
-            truth_env,
-            must_black,
-            must_white,
-            my_perspective,
-            static_cast<size_t>(num_candidates),
-            config::siamese_max_move_distance);
-
-    } else if (config::siamese_sampling_strategy == "random") {
-        auto info_set = sampleInfoSetAtMove(
-            board_size,
-            pos,
-            must_black,
-            must_white,
-            num_candidates,
-            my_perspective,
-            target_black,
-            target_white);
-        candidate_negatives = seqStatesToNegativesBitboard(
-            info_set,
-            board_size,
-            static_cast<size_t>(num_candidates));
-
-    } else if (config::siamese_sampling_strategy == "hybrid") {
-        size_t move_stone_count = static_cast<size_t>(
-            num_candidates *
-            config::siamese_move_stone_ratio);
-        size_t random_count =
-            num_candidates - move_stone_count;
-
-        auto move_samples = sampleMoveStoneNegativesBitboard(
-            truth_env,
-            must_black,
-            must_white,
-            my_perspective,
-            move_stone_count,
-            config::siamese_max_move_distance);
-
-        auto random_info_set = sampleInfoSetAtMove(
-            board_size,
-            pos,
-            must_black,
-            must_white,
-            static_cast<size_t>(random_count),
-            my_perspective,
-            target_black,
-            target_white);
-
-        auto random_samples = seqStatesToNegativesBitboard(
-            random_info_set,
-            board_size,
-            random_count);
-
-        candidate_negatives.reserve(move_samples.size() + random_samples.size());
-        candidate_negatives.insert(candidate_negatives.end(),
-                                   move_samples.begin(),
-                                   move_samples.end());
-        candidate_negatives.insert(candidate_negatives.end(),
-                                   random_samples.begin(),
-                                   random_samples.end());
-
-    } else {
-        std::cerr << "[WARNING] Unknown sampling strategy: "
-                  << config::siamese_sampling_strategy
-                  << ". Falling back to random." << std::endl;
-        auto info_set = sampleInfoSetAtMove(
-            board_size,
-            pos,
-            must_black,
-            must_white,
-            num_candidates,
-            my_perspective,
-            target_black,
-            target_white);
-        candidate_negatives = seqStatesToNegativesBitboard(
-            info_set,
-            board_size,
-            static_cast<size_t>(num_candidates));
+    // collect opponent stone positions
+    std::vector<int> pos_list;
+    while (!opp_bitboard.none()) {
+        int pos = opp_bitboard._Find_first();
+        opp_bitboard.reset(pos);
+        pos_list.push_back(pos);
     }
 
-    if (candidate_negatives.empty()) {
-        return std::vector<float>();
-    }
+    if (pos_list.empty()) { return outputs; }
 
-    // hash
-    std::unordered_set<std::size_t> seen;
-    seen.insert(truth_board_hash);
 
-    std::vector<NegativeBoard> negatives;
-    negatives.reserve(std::min<int>(num_outputs,
-                                    static_cast<int>(candidate_negatives.size())));
-
-    for (const auto& nb : candidate_negatives) {
-        if (static_cast<int>(negatives.size()) >= num_outputs) break;
-        std::size_t h = computeBoardHash(nb.black, nb.white, board_area);
-        if (!seen.insert(h).second) continue;
-        negatives.push_back(nb);
-    }
-
-    if (negatives.empty()) {
-        return std::vector<float>();
-    }
-
-    // Debug
-    static std::atomic<int> sample_count{0};
-    int current_sample = ++sample_count;
-
-    if (config::siamese_debug_output &&
-        (current_sample <= 3 || current_sample % 100 == 0)) {
-        std::cerr << "\n=== Negative Sampling (Sample #"
-                  << current_sample << ") ===\n";
-
-        std::cerr << "\n[POSITIVE] Ground Truth Board:\n";
-        std::cerr << truth_env.toString() << std::endl;
-
-        const auto& nb = negatives.front();
-        std::cerr << "\n[NEGATIVE] Sampled Board (bitboard view):\n";
-
-        for (int row = board_size - 1; row >= 0; --row) {
-            for (int col = 0; col < board_size; ++col) {
-                int p = row * board_size + col;
-
-                char ch = '.';
-                if (nb.black.test(p))
-                    ch = 'X';
-                else if (nb.white.test(p))
-                    ch = 'O';
-
-                std::cerr << ch << ' ';
+    std::mt19937 random_generator;
+    random_generator.seed(config::program_seed);
+    std::uniform_int_distribution<int> int_distribution(0, pos_list.size() - 1);
+    const int warmup_times = config::siamese_perturbation_warmup;
+    const int distance = config::siamese_max_move_distance;
+    for (int k = 0; k < index + warmup_times; k++) {
+        int index = int_distribution(random_generator) % pos_list.size();
+        int pos = pos_list[index];
+        std::vector<int> new_pos_list;
+        for (int x = -distance; x <= distance; x++) {
+            for (int y = -distance; y <= distance; y++) {
+                if (x == 0 && y == 0) { continue; }
+                if (std::abs(x) + std::abs(y) > distance) { continue; }
+                int nx = pos % minizero::config::env_board_size + x;
+                int ny = pos / minizero::config::env_board_size + y;
+                if (nx < 0 || nx >= minizero::config::env_board_size || ny < 0 || ny >= minizero::config::env_board_size) { continue; }
+                new_pos_list.push_back(ny * minizero::config::env_board_size + nx);
             }
-            std::cerr << '\n';
         }
-        std::cerr << std::endl;
 
-        std::cerr << "=====================================\n\n";
+        std::shuffle(new_pos_list.begin(), new_pos_list.end(), random_generator);
+        for (size_t i = 0; i < new_pos_list.size(); i++) {
+            int new_pos = new_pos_list[i];
+            if (stone_bitboard.get(env::Player::kPlayer1).test(new_pos) ||
+                stone_bitboard.get(env::Player::kPlayer2).test(new_pos)) {
+                continue;
+            }
+            pos_list[index] = new_pos;
+            stone_bitboard.get(env::getNextPlayer(env.getTurn(), 2)).reset(pos);
+            stone_bitboard.get(env::getNextPlayer(env.getTurn(), 2)).set(new_pos);
+
+            GoEnv test;
+            env::go::GoBitboard b = stone_bitboard.get(env::Player::kPlayer1);
+            env::go::GoBitboard w = stone_bitboard.get(env::Player::kPlayer2);
+
+            while (!b.none()) {
+                int p = b._Find_first();
+                b.reset(p);
+                test.act(env::go::GoAction(p, env::Player::kPlayer1));
+            }
+            while (!w.none()) {
+                int p = w._Find_first();
+                w.reset(p);
+                test.act(env::go::GoAction(p, env::Player::kPlayer2));
+            }
+            if (test.getStoneBitboard().get(env::Player::kPlayer1) != stone_bitboard.get(env::Player::kPlayer1) ||
+                test.getStoneBitboard().get(env::Player::kPlayer2) != stone_bitboard.get(env::Player::kPlayer2)) {
+                stone_bitboard.get(env::getNextPlayer(env.getTurn(), 2)).reset(new_pos);
+                stone_bitboard.get(env::getNextPlayer(env.getTurn(), 2)).set(pos);
+                continue;
+            }
+
+            if (k < warmup_times) { break; }
+            if (save_all || (k == index + warmup_times - 1)) { outputs.emplace_back(stone_bitboard); }
+            break;
+        }
+    }
+    return outputs;
+}
+
+std::vector<float> GoEnvLoader::bitboardToFeature(const GamePair<GoBitboard>& bitboard, Player turn, utils::Rotation rotation, bool include_history) const
+{
+    int num_channels = (include_history ? 18 : 4);
+    const int num_grids = getBoardSize() * getBoardSize();
+    std::vector<float> feature(num_channels * num_grids, 0.0f);
+
+    GoBitboard tmp = bitboard.get(Player::kPlayer1);
+    while (!tmp.none()) {
+        int pos = tmp._Find_first();
+        tmp.reset(pos);
+        feature[getRotatePosition(pos, rotation)] = 1.0f;
+    }
+    tmp = bitboard.get(Player::kPlayer2);
+    while (!tmp.none()) {
+        int pos = tmp._Find_first();
+        tmp.reset(pos);
+        feature[getRotatePosition(pos, rotation) + num_grids] = 1.0f;
     }
 
-    // Construct the tensor for network
-    std::vector<float> result;
-    result.reserve(num_outputs * 2 * board_area);
-
-    for (const auto& nb : negatives) {
-        std::vector<float> board_state =
-            extractBoardStateFromBitboard(truth_env, nb.black, nb.white, rotation);
-        result.insert(result.end(), board_state.begin(), board_state.end());
+    if (include_history) {
+        for (int i = 2 * num_grids; i < 16 * num_grids; ++i) { feature[i] = feature[i % (2 * num_grids)]; }
+        std::fill_n(feature.begin() + 16 * 81, 81, turn == Player::kPlayer1 ? 1.0f : 0.0f);
+        std::fill_n(feature.begin() + 17 * 81, 81, turn == Player::kPlayer2 ? 1.0f : 0.0f);
+    } else {
+        std::fill_n(feature.begin() + 2 * 81, 81, turn == Player::kPlayer1 ? 1.0f : 0.0f);
+        std::fill_n(feature.begin() + 3 * 81, 81, turn == Player::kPlayer2 ? 1.0f : 0.0f);
     }
-
-    // fill up to num_outputs
-    int produced = static_cast<int>(negatives.size());
-    while (produced < num_outputs) {
-        result.insert(result.end(), 2 * board_area, 0.0f);
-        ++produced;
-    }
-
-    return result;
+    return feature;
 }
 
 } // namespace minizero::env::go

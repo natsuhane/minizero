@@ -15,12 +15,13 @@ class ThreadSharedData : public utils::BaseSharedData {
 public:
     std::size_t getAvailableGameIndex();
     void outputGames(const std::string& sgf);
-    std::vector<std::shared_ptr<minizero::network::NetworkOutput>> gpuForward(int gpu_id, const std::vector<std::vector<float>>& features);
+    std::vector<std::shared_ptr<minizero::network::NetworkOutput>> gpuForward(int nn_id, const std::vector<std::vector<float>>& features);
 
     std::size_t game_index_;
     std::mutex mutex_;
     std::ofstream fout_;
     std::vector<std::string> sgfs_;
+    std::vector<std::shared_ptr<std::mutex>> nn_mutexs_;
     std::vector<std::shared_ptr<network::Network>> networks_;
 };
 
@@ -36,8 +37,7 @@ public:
 private:
     bool is_done;
 
-    std::vector<minizero::env::GamePair<minizero::env::go::GoBitboard>> randomGenerateEnv(Environment& env, int K, int distance);
-    std::vector<int> filterBoards(Environment& env, std::vector<minizero::env::GamePair<minizero::env::go::GoBitboard>>& negative_outputs, float threshold);
+    std::vector<int> filterBoards(const Environment& env, const EnvironmentLoader& env_loader, std::vector<minizero::env::GamePair<minizero::env::go::GoBitboard>>& negative_outputs, float threshold);
     std::string idtoString(const std::vector<int>& neg_ids);
     inline std::shared_ptr<ThreadSharedData> getSharedData() { return std::static_pointer_cast<ThreadSharedData>(shared_data_); }
 };

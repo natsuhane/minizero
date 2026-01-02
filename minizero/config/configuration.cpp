@@ -69,10 +69,11 @@ int nn_num_blocks = 1;
 int nn_num_hidden_channels = 256;
 int nn_num_value_hidden_channels = 256;
 std::string nn_type_name = "alphazero";
+int num_networks_per_GPU = 1;
 std::string siamese_mode = "training";
 int siamese_num_negatives = 5;
 int siamese_eval_num_negatives = 100;
-std::string siamese_sampling_strategy = "random";
+std::string siamese_sampling_strategy = "random_move_piece";
 float siamese_move_stone_ratio = 0.8f;
 bool siamese_debug_output = false;
 int siamese_max_move_distance = 0;
@@ -166,10 +167,11 @@ void setConfiguration(ConfigureLoader& cl)
     cl.addParameter("nn_num_hidden_channels", nn_num_hidden_channels, "hyperparameter for the model; the size of the hidden channels in residual blocks", "Network");               // ref: AGZ
     cl.addParameter("nn_num_value_hidden_channels", nn_num_value_hidden_channels, "hyperparameter for the model; the size of the hidden channels in the value network", "Network"); // ref: AGZ
     cl.addParameter("nn_type_name", nn_type_name, "the type of training algorithm and network: alphazero/muzero", "Network");
+    cl.addParameter("num_networks_per_GPU", num_networks_per_GPU, "the number of networks to be loaded on each GPU", "Network");
     cl.addParameter("siamese_mode", siamese_mode, "the mode of siamese network: training/testing", "Network");
     cl.addParameter("siamese_num_negatives", siamese_num_negatives, "the number of candidate negative boards sampled per anchor during training", "Network");
     cl.addParameter("siamese_eval_num_negatives", siamese_eval_num_negatives, "the number of negative boards returned per (anchor, positive) during evaluation/testing", "Network");
-    cl.addParameter("siamese_sampling_strategy", siamese_sampling_strategy, "the sampling strategy for negative boards: random/move_stone/hybrid", "Network");
+    cl.addParameter("siamese_sampling_strategy", siamese_sampling_strategy, "the sampling strategy for negative boards: random/move_stone/hybrid/random_move_piece/filter_by_value", "Network");
     cl.addParameter("siamese_move_stone_ratio", siamese_move_stone_ratio, "the ratio of move_stone samples in hybrid mode (0.0-1.0)", "Network");
     cl.addParameter("siamese_debug_output", siamese_debug_output, "whether to print debug board visualization output", "Network");
     cl.addParameter("siamese_max_move_distance", siamese_max_move_distance, "the maximum Manhattan distance for moving stones", "Network");

@@ -16,11 +16,11 @@ class PhantomGoSiamese(nn.Module):
     """
     Siamese network for Phantom Go with two encoders:
     - anchor_encoder: encodes observation history (H*6 x N x N)
-    - board_encoder: encodes board state (2 x N x N)
+    - board_encoder: encodes board state (4 x N x N)
     Both produce L2-normalized embeddings in a shared space.
     """
 
-    def __init__(self, obs_in_channels: int, board_in_channels: int = 2, embed_dim: int = 512):
+    def __init__(self, obs_in_channels: int, board_in_channels: int = 4, embed_dim: int = 512):
         super().__init__()
         self.obs_in_channels = obs_in_channels
         self.board_in_channels = board_in_channels
@@ -155,7 +155,7 @@ class SiameseNetwork(nn.Module):
 
         self.network = PhantomGoSiamese(
             obs_in_channels=num_input_channels,
-            board_in_channels=2,
+            board_in_channels=4,
             embed_dim=512
         )
 

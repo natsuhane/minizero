@@ -223,8 +223,7 @@ void DataLoaderThread::setIIGTrainingData(int batch_index)
     std::vector<float> anchor = env_loader.getAnchor(pos, rotation);
     std::vector<float> positive = env_loader.getPositive(pos, rotation);
 
-    int train_candidates = std::max(config::siamese_num_negatives, 1);
-    std::vector<float> negative = env_loader.getNegative(pos, rotation, 1, train_candidates);
+    std::vector<float> negative = env_loader.getNegative(pos, rotation);
 
     // write data to data_ptr
     std::copy(anchor.begin(), anchor.end(), getSharedData()->getDataPtr()->anchor_ + anchor.size() * batch_index);
@@ -242,9 +241,7 @@ void DataLoaderThread::setIIGTestingData(int batch_index, int env_id, int pos)
     std::vector<float> anchor = env_loader.getAnchor(pos, rotation);
     std::vector<float> positive = env_loader.getPositive(pos, rotation);
 
-    int eval_outputs = std::max(config::siamese_eval_num_negatives, 1);
-    int eval_candidates = eval_outputs;
-    std::vector<float> negative = env_loader.getNegative(pos, rotation, eval_outputs, eval_candidates);
+    std::vector<float> negative = env_loader.getNegative(pos, rotation);
 
     // write data to data_ptr
     std::copy(anchor.begin(), anchor.end(), getSharedData()->getDataPtr()->anchor_ + anchor.size() * batch_index);
