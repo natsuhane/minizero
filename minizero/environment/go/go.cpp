@@ -1478,14 +1478,13 @@ std::vector<env::GamePair<env::go::GoBitboard>> GoEnvLoader::generateNegativeBit
 
     if (pos_list.empty()) { return outputs; }
 
-
     std::mt19937 random_generator;
     random_generator.seed(config::program_seed);
     std::uniform_int_distribution<int> int_distribution(0, pos_list.size() - 1);
-    const int warmup_times = config::siamese_perturbation_warmup;
+    const int warmup_times = 100;
     const int distance = config::siamese_max_move_distance;
     for (int k = 0; k < index + warmup_times; k++) {
-        int index = int_distribution(random_generator) % pos_list.size();
+        int index = int_distribution(random_generator);
         int pos = pos_list[index];
         std::vector<int> new_pos_list;
         for (int x = -distance; x <= distance; x++) {
@@ -1510,29 +1509,12 @@ std::vector<env::GamePair<env::go::GoBitboard>> GoEnvLoader::generateNegativeBit
             stone_bitboard.get(env::getNextPlayer(env.getTurn(), 2)).reset(pos);
             stone_bitboard.get(env::getNextPlayer(env.getTurn(), 2)).set(new_pos);
 
-            GoEnv test;
-            env::go::GoBitboard b = stone_bitboard.get(env::Player::kPlayer1);
-            env::go::GoBitboard w = stone_bitboard.get(env::Player::kPlayer2);
-
-            while (!b.none()) {
-                int p = b._Find_first();
-                b.reset(p);
-                test.act(env::go::GoAction(p, env::Player::kPlayer1));
-            }
-            while (!w.none()) {
-                int p = w._Find_first();
-                w.reset(p);
-                test.act(env::go::GoAction(p, env::Player::kPlayer2));
-            }
-            if (test.getStoneBitboard().get(env::Player::kPlayer1) != stone_bitboard.get(env::Player::kPlayer1) ||
-                test.getStoneBitboard().get(env::Player::kPlayer2) != stone_bitboard.get(env::Player::kPlayer2)) {
-                stone_bitboard.get(env::getNextPlayer(env.getTurn(), 2)).reset(new_pos);
-                stone_bitboard.get(env::getNextPlayer(env.getTurn(), 2)).set(pos);
-                continue;
-            }
-
             if (k < warmup_times) { break; }
-            if (save_all || (k == index + warmup_times - 1)) { outputs.emplace_back(stone_bitboard); }
+            if (save_all || outputs.empty()) {
+                outputs.emplace_back(stone_bitboard);
+            } else {
+                outputs[0] = stone_bitboard;
+            }
             break;
         }
     }

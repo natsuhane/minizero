@@ -79,13 +79,19 @@ while :; do
 	shift
 done
 
-GIT_SHORT_HASH=$(git rev-parse --short HEAD)
-default_name=${game_type}-siamese-${GIT_SHORT_HASH}
+# create default name; also check if configurations are valid
+testrun_stderr_tmp=$(mktemp)
+default_name=$(${sp_executable_file} -mode zero_training_name -conf_file ${configure_file} -conf_str "${overwrite_conf_str}" 2>${testrun_stderr_tmp} || :)
+testrun_stderr=$(<${testrun_stderr_tmp})
+rm -f ${testrun_stderr_tmp}
+if [[ ! ${default_name} ]]; then
+	echo "${testrun_stderr}" >&2
+	exit 1
+fi
 # use default name of training if name is not assigned
 if [[ -z ${train_dir} ]]; then
 	train_dir=${name_prefix}${default_name}${name_suffix}
 fi
-
 
 # arguments
 cuda_devices=$(echo ${gpu_list} | awk '{ split($0, chars, ""); printf(chars[1]); for(i=2; i<=length(chars); ++i) { printf(","chars[i]); } }')
@@ -106,6 +112,7 @@ then
     echo "link ${link_sgf} ..."
     echo "end_iteration: ${end_iteration}"
 fi
+touch ${train_dir}/Training.log
 touch ${train_dir}/op.log
 new_configure_file=$(basename ${train_dir}).cfg
 ${sp_executable_file} -gen ${train_dir}/${new_configure_file} -conf_file ${configure_file} -conf_str "${overwrite_conf_str}" 2>/dev/null
@@ -115,4 +122,4 @@ cuda_devices=$(echo ${gpu_list} | awk '{ split($0, chars, ""); printf(chars[1]);
 echo "train \"\" -1 -1" | CUDA_VISIBLE_DEVICES=${cuda_devices} PYTHONPATH=. python ${op_executable_file} ${game_type} ${train_dir} ${train_dir}/${new_configure_file} >/dev/null 2>&1
 
 # format: py/Train.py train_dir conf_file
-CUDA_VISIBLE_DEVICES=${cuda_devices} PYTHONPATH=. python ${op_executable_file} ${game_type} ${train_dir} ${train_dir}/${new_configure_file}
+echo -e "start\ntrain weight_iter_0.pkl 1 1" | CUDA_VISIBLE_DEVICES=${cuda_devices} PYTHONPATH=. python ${op_executable_file} ${game_type} ${train_dir} ${train_dir}/${new_configure_file} 2> >(tee -a ${train_dir}/op.log >&2)

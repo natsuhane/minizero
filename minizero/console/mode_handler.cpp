@@ -156,12 +156,12 @@ void ModeHandler::runZeroServer()
 
 void ModeHandler::runZeroTrainingName()
 {
-    std::cout << Environment().name()                                                           // name for environment
-              << "_" << (config::actor_use_gumbel ? "g" : "") << config::nn_type_name[0] << "z" // network & training algorithm
-              << "_" << config::nn_num_blocks << "b"                                            // number of blocks
-              << "x" << config::nn_num_hidden_channels                                          // number of hidden channels
-              << "_n" << config::actor_num_simulation                                           // number of simulations
-              << "-" << GIT_SHORT_HASH << std::endl;                                            // git hash info
+    std::cout << Environment().name()                             // name for environment
+              << "_" << config::nn_type_name                      // network & training algorithm
+              << "_" << config::nn_num_blocks << "b"              // number of blocks
+              << "x" << config::nn_num_hidden_channels            // number of hidden channels
+              << "_k" << config::siamese_max_random_perturbations // siamese max random perturbations
+              << "-" << GIT_SHORT_HASH << std::endl;              // git hash info
 }
 
 void ModeHandler::runEnvTest()

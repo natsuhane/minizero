@@ -72,6 +72,9 @@ extern int nn_num_hidden_channels;
 extern int nn_num_value_hidden_channels;
 extern std::string nn_type_name;
 extern int num_networks_per_GPU;
+extern int nn_snapshot_interval;
+
+// siamese parameters
 extern std::string siamese_mode;
 extern int siamese_num_negatives;
 extern int siamese_eval_num_negatives;
@@ -81,7 +84,6 @@ extern bool siamese_debug_output;
 extern int siamese_max_move_distance;
 extern float siamese_value_threshold;
 extern int siamese_max_random_perturbations;
-extern int siamese_perturbation_warmup;
 extern std::string siamese_input_record_file_name;
 extern std::string siamese_output_record_file_name;
 

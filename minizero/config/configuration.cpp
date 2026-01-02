@@ -70,6 +70,9 @@ int nn_num_hidden_channels = 256;
 int nn_num_value_hidden_channels = 256;
 std::string nn_type_name = "alphazero";
 int num_networks_per_GPU = 1;
+int nn_snapshot_interval = 1000;
+
+// siamese parameters
 std::string siamese_mode = "training";
 int siamese_num_negatives = 5;
 int siamese_eval_num_negatives = 100;
@@ -79,7 +82,6 @@ bool siamese_debug_output = false;
 int siamese_max_move_distance = 0;
 float siamese_value_threshold = 0.1f;
 int siamese_max_random_perturbations = 1000;
-int siamese_perturbation_warmup = 100;
 std::string siamese_input_record_file_name = "";
 std::string siamese_output_record_file_name = "";
 
@@ -168,18 +170,20 @@ void setConfiguration(ConfigureLoader& cl)
     cl.addParameter("nn_num_value_hidden_channels", nn_num_value_hidden_channels, "hyperparameter for the model; the size of the hidden channels in the value network", "Network"); // ref: AGZ
     cl.addParameter("nn_type_name", nn_type_name, "the type of training algorithm and network: alphazero/muzero", "Network");
     cl.addParameter("num_networks_per_GPU", num_networks_per_GPU, "the number of networks to be loaded on each GPU", "Network");
-    cl.addParameter("siamese_mode", siamese_mode, "the mode of siamese network: training/testing", "Network");
-    cl.addParameter("siamese_num_negatives", siamese_num_negatives, "the number of candidate negative boards sampled per anchor during training", "Network");
-    cl.addParameter("siamese_eval_num_negatives", siamese_eval_num_negatives, "the number of negative boards returned per (anchor, positive) during evaluation/testing", "Network");
-    cl.addParameter("siamese_sampling_strategy", siamese_sampling_strategy, "the sampling strategy for negative boards: random/move_stone/hybrid/random_move_piece/filter_by_value", "Network");
-    cl.addParameter("siamese_move_stone_ratio", siamese_move_stone_ratio, "the ratio of move_stone samples in hybrid mode (0.0-1.0)", "Network");
-    cl.addParameter("siamese_debug_output", siamese_debug_output, "whether to print debug board visualization output", "Network");
-    cl.addParameter("siamese_max_move_distance", siamese_max_move_distance, "the maximum Manhattan distance for moving stones", "Network");
-    cl.addParameter("siamese_value_threshold", siamese_value_threshold, "the threshold to filter possible negative boards by value", "Network");
-    cl.addParameter("siamese_max_random_perturbations", siamese_max_random_perturbations, "the number of selecting a stone and move it to all possible surrounding positions", "Network");
-    cl.addParameter("siamese_perturbation_warmup", siamese_perturbation_warmup, "the number of warmup steps when doing perturbation (random move 1 piece)", "Network");
-    cl.addParameter("siamese_input_record_file_name", siamese_input_record_file_name, "for generate dataset, the directory of input selfplay data", "Network");
-    cl.addParameter("siamese_output_record_file_name", siamese_output_record_file_name, "for generate dataset, the directory of output file", "Network");
+    cl.addParameter("nn_snapshot_interval", nn_snapshot_interval, "the interval (in training steps) to save snapshot of the neural network during training; 0 means disabling snapshot", "Network");
+
+    // siamese parameters
+    cl.addParameter("siamese_mode", siamese_mode, "the mode of siamese network: training/testing", "Siamese");
+    cl.addParameter("siamese_num_negatives", siamese_num_negatives, "the number of candidate negative boards sampled per anchor during training", "Siamese");
+    cl.addParameter("siamese_eval_num_negatives", siamese_eval_num_negatives, "the number of negative boards returned per (anchor, positive) during evaluation/testing", "Siamese");
+    cl.addParameter("siamese_sampling_strategy", siamese_sampling_strategy, "the sampling strategy for negative boards: random/move_stone/hybrid/random_move_piece/filter_by_value", "Siamese");
+    cl.addParameter("siamese_move_stone_ratio", siamese_move_stone_ratio, "the ratio of move_stone samples in hybrid mode (0.0-1.0)", "Siamese");
+    cl.addParameter("siamese_debug_output", siamese_debug_output, "whether to print debug board visualization output", "Siamese");
+    cl.addParameter("siamese_max_move_distance", siamese_max_move_distance, "the maximum Manhattan distance for moving stones", "Siamese");
+    cl.addParameter("siamese_value_threshold", siamese_value_threshold, "the threshold to filter possible negative boards by value", "Siamese");
+    cl.addParameter("siamese_max_random_perturbations", siamese_max_random_perturbations, "the number of selecting a stone and move it to all possible surrounding positions", "Siamese");
+    cl.addParameter("siamese_input_record_file_name", siamese_input_record_file_name, "for generate dataset, the directory of input selfplay data", "Siamese");
+    cl.addParameter("siamese_output_record_file_name", siamese_output_record_file_name, "for generate dataset, the directory of output file", "Siamese");
 
     // environment parameters
     cl.addParameter("env_board_size", env_board_size, "the size of board", "Environment");

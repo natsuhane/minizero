@@ -9,6 +9,18 @@
 
 ## Train siamese
 * Start a container first: `./scripts/start-container.sh`
+### train-siamese.sh
+* `./scripts/train-siamese.sh go [config file] [end iteration] --link_sgf [sgf folder]`
+  * Example: `./scripts/train-siamese.sh go go.cfg 300 --link_sgf sgf`
+  * Do op only
+  * `--link_sgf`: Copy the sgf folder to training folder
+  ```
+  /sgf
+  --1.sgf
+  ```
+  * To be completed
+
+### zero-server & worker
 * `./scripts/zero-server.sh go [config file] [end iteration] --link_sgf [sgf folder] --op_executable_file minizero/learner/train_siamese.py`
   * Example: `./scripts/zero-server.sh go go.cfg 300 --link_sgf sgf --op_executable_file minizero/learner/train_siamese.py -g 0 -conf_str learner_batch_size=16`
 * `./scripts/zero-worker.sh go [host] [port] op --op_executable_file minizero/learner/train_siamese.py`
@@ -35,22 +47,6 @@
 * Regenerate charts from existing log (without re-running evaluation):
   * `python minizero/eval_siamese.py --plot training_dir`
   * Example: `python minizero/eval_siamese.py --plot go_9x9_sz_1bx256_n50-ed3882-dirty`
-  
-## To be completed
-* `./scripts/train-siamese.sh go [config file] [end iteration] --link_sgf [sgf folder]`
-  * Example: `./scripts/train-siamese.sh go go.cfg 300 --link_sgf sgf`
-  * Do op only
-  * For more arguments, see `./scripts/train-siamese.sh`
-  * `--link_sgf`: Copy the sgf folder to training folder
-  ```
-  /sgf
-  --1.sgf
-  --2.sgf
-  .
-  .
-  .
-  // Each .sgf file has lots of game records
-  ```
 
 # MiniZero
 

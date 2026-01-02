@@ -40,7 +40,7 @@ class MinizeroDataLoader:
         # allocate memory
 
         self.anchor_channels = 72
-        self.board_channels = 4 # black piece, white piece, black's turn?, white's turn?
+        self.board_channels = 4  # black piece, white piece, black's turn?, white's turn?
 
         self.anchor = np.zeros(py.get_batch_size() * self.anchor_channels * py.get_nn_input_channel_height() * py.get_nn_input_channel_width(), dtype=np.float32)
         self.positive = np.zeros(py.get_batch_size() * self.board_channels * py.get_nn_input_channel_height() * py.get_nn_input_channel_width(), dtype=np.float32)
@@ -189,6 +189,12 @@ def train(model, training_dir, data_loader, start_iter, end_iter):
                     round(training_info[loss_key] / py.get_training_display_step(), 5)
                 ))
             training_info = {}
+
+        if py.get_nn_snapshot_interval() > 0 and model.training_step % py.get_nn_snapshot_interval() == 0:
+            model.save_model(training_dir)
+            print("Snapshot model", model.training_step, flush=True)
+            eprint("Snapshot model", model.training_step)
+            analysis(training_dir, "analysis")
 
     model.save_model(training_dir)
     print("Optimization_Done", model.training_step, flush=True)

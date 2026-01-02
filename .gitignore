@@ -12,6 +12,7 @@ __pycache__
 *_gmz_*/
 *_sz_*/
 *-siamese-*/
+*_siamese_*/
 
 # sgf files
 *.sgf
