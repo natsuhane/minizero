@@ -155,16 +155,6 @@ struct MoveEvent {
     std::vector<int> captured_stones;
 };
 
-struct SeqState {
-    std::vector<GoAction> seq;
-    GoHashKey hash;
-};
-
-struct NegativeBoard {
-    GoBitboard black;
-    GoBitboard white;
-};
-
 // Phantom Go helper functions
 GoEnv rebuildGoEnvToStep(const GoEnvLoader& env_loader, int target_pos);
 std::vector<GoEnv> rebuildFullHistory(const GoEnvLoader& env_loader, int target_pos);
@@ -183,29 +173,10 @@ bool breaksSatisfiedMust(
     const std::unordered_set<int>& satisfied_black,
     const std::unordered_set<int>& satisfied_white);
 
-// Phantom Go sampling functions
-std::vector<NegativeBoard> sampleMoveStoneNegativesBitboard(
-    const GoEnv& truth_env,
-    const std::unordered_set<int>& must_black,
-    const std::unordered_set<int>& must_white,
-    Player my_perspective,
-    size_t target_samples,
-    int max_move_distance);
-
-std::vector<SeqState> sampleInfoSetAtMove(
-    int board_size,
-    int move_number,
-    const std::unordered_set<int>& must_black,
-    const std::unordered_set<int>& must_white,
-    size_t target_samples,
-    Player my_perspective,
-    int target_black_count,
-    int target_white_count,
-    int max_total_attempts = 100);
+// Unmovable opponent positions (must-exist stones based on capture history)
+std::unordered_set<int> getUnmovableOpponentPositions(const GoEnvLoader& env_loader, int pos);
 
 // Feature extraction
-std::size_t computeBoardHash(const GoBitboard& black_bb, const GoBitboard& white_bb, int board_area);
-std::vector<NegativeBoard> seqStatesToNegativesBitboard(const std::vector<SeqState>& info_set, int board_size, size_t max_num);
 std::vector<float> extractBoardStateFromBitboard(const GoEnv& ref_env, const GoBitboard& black_bb, const GoBitboard& white_bb, utils::Rotation rotation);
 std::vector<float> extractBoardState(const GoEnv& env, utils::Rotation rotation);
 

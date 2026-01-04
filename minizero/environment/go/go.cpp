@@ -906,383 +906,27 @@ bool breaksSatisfiedMust(
     return false;
 }
 
-// ===== Internal Helper Functions for Move-Stone Sampling =====
-
-namespace {
-
-std::vector<int> identifyMovableStones(
-    const GoEnv& truth_env,
-    const std::unordered_set<int>& must_black,
-    const std::unordered_set<int>& must_white,
-    Player my_perspective)
+std::unordered_set<int> getUnmovableOpponentPositions(const GoEnvLoader& env_loader, int pos)
 {
-    std::vector<int> movable;
-    const int board_size = truth_env.getBoardSize();
+    // Rebuild history up to the given position
+    std::vector<GoEnv> history = rebuildFullHistory(env_loader, pos);
+    std::vector<MoveEvent> events = buildMoveEvents(history, env_loader);
 
-    // Get OPPONENT's stones
+    // Determine perspective (the player who is about to move)
+    const auto& action_pairs = env_loader.getActionPairs();
+    Player my_perspective = (pos > 0 && pos <= static_cast<int>(action_pairs.size()))
+                                ? action_pairs[pos - 1].first.nextPlayer()
+                                : Player::kPlayer1;
+
+    // Compute must sets
+    auto [must_black, must_white] = computeMustSets(pos, my_perspective, events, history);
+
+    // Return opponent's must set (stones that cannot be moved)
     Player opponent = (my_perspective == Player::kPlayer1) ? Player::kPlayer2 : Player::kPlayer1;
-    const auto& opp_stones = truth_env.getStoneBitboard().get(opponent);
-
-    // Determine which MUST set to use for OPPONENT
-    const auto& must_set = (opponent == Player::kPlayer1) ? must_black : must_white;
-
-    // Find all OPPONENT's stones that are not in MUST set
-    for (int pos = 0; pos < board_size * board_size; ++pos) {
-        if (!opp_stones.test(pos)) continue; // Not opponent's stone
-        if (must_set.count(pos)) continue;   // Is MUST stone, cannot move
-
-        movable.push_back(pos);
-    }
-
-    return movable;
-}
-
-std::vector<int> findCandidateTargets(
-    const GoEnv& truth_env,
-    int source_pos,
-    Player perspective,
-    int max_distance)
-{
-    std::vector<int> candidates;
-    const int board_size = truth_env.getBoardSize();
-    const int board_area = board_size * board_size;
-
-    // color of moving stone
-    Player stone_color = truth_env.getGrid(source_pos).getPlayer();
-    if (stone_color == Player::kPlayerNone) {
-        return candidates; // skip for empty position
-    }
-
-    Player opponent = (stone_color == Player::kPlayer1) ? Player::kPlayer2 : Player::kPlayer1;
-
-    // original coordinate
-    int src_row = source_pos / board_size;
-    int src_col = source_pos % board_size;
-
-    auto try_add_pos = [&](int pos) {
-        const GoGrid& grid = truth_env.getGrid(pos);
-        if (grid.getPlayer() != Player::kPlayerNone) return;
-
-        // check if it captures stones
-        bool would_capture = false;
-        const std::vector<int>& neighbors = grid.getNeighbors();
-        for (int nb_pos : neighbors) {
-            const GoGrid& nb_grid = truth_env.getGrid(nb_pos);
-            if (nb_grid.getPlayer() != opponent) continue;
-
-            const GoBlock* nb_block = nb_grid.getBlock();
-            if (!nb_block) continue;
-
-            if (nb_block->getNumLiberty() == 1) {
-                const GoBitboard& liberty_bb = nb_block->getLibertyBitboard();
-                if (liberty_bb.test(pos)) {
-                    // one liberty
-                    would_capture = true;
-                    break;
-                }
-            }
-        }
-        if (would_capture) return;
-
-        // legality
-        GoAction a(pos, stone_color);
-        if (!truth_env.isLegalAction(a)) return;
-
-        candidates.push_back(pos);
-    };
-
-    // manhattan distance limitation
-    if (max_distance > 0 && max_distance < board_size) {
-        for (int dr = -max_distance; dr <= max_distance; ++dr) {
-            int row = src_row + dr;
-            if (row < 0 || row >= board_size) continue;
-
-            int max_dc = max_distance - std::abs(dr);
-            for (int dc = -max_dc; dc <= max_dc; ++dc) {
-                int col = src_col + dc;
-                if (col < 0 || col >= board_size) continue;
-
-                int pos = row * board_size + col;
-                if (pos == source_pos) continue;
-
-                try_add_pos(pos);
-            }
-        }
-    } else { // no distance limitation (whole board)
-        for (int pos = 0; pos < board_area; ++pos) {
-            if (pos == source_pos) continue;
-            try_add_pos(pos);
-        }
-    }
-
-    return candidates;
-}
-
-} // anonymous namespace
-
-std::vector<NegativeBoard> sampleMoveStoneNegativesBitboard(
-    const GoEnv& truth_env,
-    const std::unordered_set<int>& must_black,
-    const std::unordered_set<int>& must_white,
-    Player my_perspective,
-    size_t target_samples,
-    int max_move_distance)
-{
-    const int board_size = truth_env.getBoardSize();
-    const int board_area = board_size * board_size;
-
-    const auto& black_truth = truth_env.getStoneBitboard().get(Player::kPlayer1);
-    const auto& white_truth = truth_env.getStoneBitboard().get(Player::kPlayer2);
-
-    std::vector<NegativeBoard> negatives;
-    negatives.reserve(target_samples);
-
-    // Find all movable stones
-    auto movable = identifyMovableStones(truth_env, must_black, must_white, my_perspective);
-    if (movable.empty() || target_samples == 0) {
-        return negatives;
-    }
-
-    // cache candidate targets for every source_pos
-    std::vector<std::vector<int>> target_cache(board_area);
-    std::vector<char> has_cache(board_area, 0);
-
-    std::mt19937 rng{std::random_device{}()};
-    std::uniform_int_distribution<> stone_dis(0, static_cast<int>(movable.size()) - 1);
-
-    const int attempts_limit = static_cast<int>(target_samples) * 20;
-    int attempts = 0;
-
-    while (negatives.size() < target_samples && attempts < attempts_limit) {
-        ++attempts;
-
-        int source_pos = movable[stone_dis(rng)];
-
-        if (!has_cache[source_pos]) {
-            target_cache[source_pos] =
-                findCandidateTargets(truth_env, source_pos, my_perspective, max_move_distance);
-            has_cache[source_pos] = 1;
-        }
-
-        const auto& candidates = target_cache[source_pos];
-        if (candidates.empty()) {
-            continue;
-        }
-
-        std::uniform_int_distribution<> target_dis(0, static_cast<int>(candidates.size()) - 1);
-        int target_pos = candidates[target_dis(rng)];
-        if (target_pos == source_pos) continue;
-
-        Player stone_color = truth_env.getGrid(source_pos).getPlayer();
-        if (stone_color == Player::kPlayerNone) continue;
-
-        GoBitboard black_bb = black_truth;
-        GoBitboard white_bb = white_truth;
-
-        if (stone_color == Player::kPlayer1) {
-            black_bb.reset(source_pos);
-            black_bb.set(target_pos);
-        } else {
-            white_bb.reset(source_pos);
-            white_bb.set(target_pos);
-        }
-
-        negatives.push_back(NegativeBoard{black_bb, white_bb});
-    }
-
-    return negatives;
-}
-
-std::vector<SeqState> sampleInfoSetAtMove(
-    int board_size,
-    int move_number,
-    const std::unordered_set<int>& must_black,
-    const std::unordered_set<int>& must_white,
-    size_t target_samples,
-    Player my_perspective,
-    int target_black_count,
-    int target_white_count,
-    int max_total_attempts)
-{
-    const int PASS = board_size * board_size;
-    std::vector<SeqState> out;
-    out.reserve(target_samples);
-    std::unordered_set<GoHashKey> seen;
-
-    auto other = [](Player p) { return (p == Player::kPlayer1) ? Player::kPlayer2 : Player::kPlayer1; };
-    Player opp = other(my_perspective);
-
-    std::mt19937 rng{std::random_device{}()};
-
-    auto try_place_specific = [&](GoEnv& env,
-                                  int pos,
-                                  Player p,
-                                  std::unordered_set<int>& satisfied_black,
-                                  std::unordered_set<int>& satisfied_white,
-                                  std::vector<GoAction>& seq) -> bool {
-        GoEnv test = env;
-        GoAction a(pos, p);
-        if (!test.act(a)) return false;
-        if (breaksSatisfiedMust(env, test, a, satisfied_black, satisfied_white)) return false;
-        env = std::move(test);
-        seq.push_back(a);
-        if (p == Player::kPlayer1) {
-            satisfied_black.insert(pos);
-        } else {
-            satisfied_white.insert(pos);
-        }
-        return true;
-    };
-
-    for (int attempt = 0; attempt < max_total_attempts && out.size() < target_samples; ++attempt) {
-        GoEnv env(board_size);
-        std::vector<GoAction> seq;
-        seq.reserve(128);
-
-        std::unordered_set<int> pending_black = must_black;
-        std::unordered_set<int> pending_white = must_white;
-        std::unordered_set<int> satisfied_black, satisfied_white;
-
-        bool fail = false;
-        Player turn = Player::kPlayer1;
-
-        // Step 1: Place all MUST stones
-        while ((!pending_black.empty() || !pending_white.empty()) && !fail) {
-            auto& pending_me = (turn == Player::kPlayer1) ? pending_black : pending_white;
-            bool placed = false;
-
-            if (!pending_me.empty()) {
-                std::vector<int> cand(pending_me.begin(), pending_me.end());
-                std::shuffle(cand.begin(), cand.end(), rng);
-                for (int pos : cand) {
-                    if (try_place_specific(env, pos, turn, satisfied_black, satisfied_white, seq)) {
-                        pending_me.erase(pos);
-                        placed = true;
-                        break;
-                    }
-                }
-            }
-
-            if (!placed) {
-                GoEnv test = env;
-                GoAction pass(PASS, turn);
-                if (!test.act(pass)) {
-                    fail = true;
-                    break;
-                }
-                env = std::move(test);
-                seq.push_back(pass);
-            }
-
-            turn = other(turn);
-        }
-
-        if (fail || !pending_black.empty() || !pending_white.empty()) continue;
-
-        // Step 2: Place opponent's stones until target count
-        int cur_black = countStonesOnBoard(env, Player::kPlayer1);
-        int cur_white = countStonesOnBoard(env, Player::kPlayer2);
-
-        int need_opp = (opp == Player::kPlayer1) ? std::max(0, target_black_count - cur_black) : std::max(0, target_white_count - cur_white);
-
-        int safety_steps = board_size * board_size * 2;
-        while (!fail && safety_steps-- > 0 && need_opp > 0) {
-            if (turn == my_perspective) {
-                GoEnv test = env;
-                GoAction pass(PASS, turn);
-                if (!test.act(pass)) {
-                    fail = true;
-                    break;
-                }
-                env = std::move(test);
-                seq.push_back(pass);
-            } else {
-                std::vector<GoAction> legal = env.getLegalActions();
-                if (legal.empty()) {
-                    fail = true;
-                    break;
-                }
-                std::shuffle(legal.begin(), legal.end(), rng);
-
-                bool moved = false;
-                for (const auto& a : legal) {
-                    int id = a.getActionID();
-                    if (id == PASS) continue;
-                    if (a.getPlayer() != opp) continue;
-
-                    GoEnv test = env;
-                    if (!test.act(a)) continue;
-                    if (breaksSatisfiedMust(env, test, a, satisfied_black, satisfied_white)) continue;
-
-                    env = std::move(test);
-                    seq.push_back(a);
-                    moved = true;
-                    --need_opp;
-                    break;
-                }
-                if (!moved) {
-                    fail = true;
-                    break;
-                }
-            }
-            turn = other(turn);
-        }
-
-        if (fail) continue;
-
-        int fin_black = countStonesOnBoard(env, Player::kPlayer1);
-        int fin_white = countStonesOnBoard(env, Player::kPlayer2);
-        if (fin_black != target_black_count || fin_white != target_white_count) continue;
-
-        GoHashKey h = env.getHashKey();
-        if (seen.insert(h).second) {
-            out.push_back(SeqState{std::move(seq), h});
-        }
-    }
-
-    return out;
+    return (opponent == Player::kPlayer1) ? must_black : must_white;
 }
 
 // ========== Feature Extraction Functions ==========
-
-std::size_t computeBoardHash(const GoBitboard& black_bb,
-                             const GoBitboard& white_bb,
-                             int board_area)
-{
-    std::size_t h = 1469598103934665603ull; // FNV offset
-    for (int pos = 0; pos < board_area; ++pos) {
-        unsigned char v = 0;
-        if (black_bb.test(pos)) v |= 1;
-        if (white_bb.test(pos)) v |= 2;
-        h ^= static_cast<std::size_t>(v);
-        h *= 1099511628211ull; // FNV prime
-    }
-    return h;
-}
-
-std::vector<NegativeBoard> seqStatesToNegativesBitboard(
-    const std::vector<SeqState>& info_set,
-    int board_size,
-    size_t max_num)
-{
-    std::vector<NegativeBoard> out;
-    out.reserve(std::min(max_num, info_set.size()));
-
-    for (const auto& s : info_set) {
-        if (out.size() >= max_num) break;
-
-        GoEnv env(board_size);
-        for (const auto& a : s.seq) {
-            env.act(a);
-        }
-
-        const auto& black_bb = env.getStoneBitboard().get(Player::kPlayer1);
-        const auto& white_bb = env.getStoneBitboard().get(Player::kPlayer2);
-        out.push_back(NegativeBoard{black_bb, white_bb});
-    }
-
-    return out;
-}
 
 std::vector<float> extractBoardStateFromBitboard(
     const GoEnv& ref_env,
@@ -1468,15 +1112,39 @@ std::vector<env::GamePair<env::go::GoBitboard>> GoEnvLoader::generateNegativeBit
     env::GamePair<env::go::GoBitboard> stone_bitboard = env.getStoneBitboard();
     env::go::GoBitboard opp_bitboard = stone_bitboard.get(env::getNextPlayer(env.getTurn(), 2)); // 361 bit
 
-    // collect opponent stone positions
+    // [Optional] Get unmovable opponent positions based on capture history (time-consuming, comment out if not needed)
+    int move_pos = static_cast<int>(env.getActionHistory().size());
+    std::unordered_set<int> unmovable_positions = getUnmovableOpponentPositions(*this, move_pos);
+    // std::unordered_set<int> unmovable_positions; // empty set if disabled
+
+    // collect opponent stone positions (excluding unmovable positions)
     std::vector<int> pos_list;
     while (!opp_bitboard.none()) {
         int pos = opp_bitboard._Find_first();
         opp_bitboard.reset(pos);
+        // Skip unmovable positions (must-exist stones)
+        if (!unmovable_positions.empty() && unmovable_positions.count(pos)) { continue; }
         pos_list.push_back(pos);
     }
 
     if (pos_list.empty()) { return outputs; }
+
+    // Hash set for deduplication (using Zobrist hash)
+    std::unordered_set<GoHashKey> seen_hashes;
+    const int board_area = getBoardSize() * getBoardSize();
+
+    // Helper lambda to compute Zobrist hash from bitboards
+    auto computeZobristHash = [board_area](const GoBitboard& black_bb, const GoBitboard& white_bb) -> GoHashKey {
+        GoHashKey hash = 0;
+        for (int p = 0; p < board_area; ++p) {
+            if (black_bb.test(p)) {
+                hash ^= getGoGridHashKey(p, Player::kPlayer1);
+            } else if (white_bb.test(p)) {
+                hash ^= getGoGridHashKey(p, Player::kPlayer2);
+            }
+        }
+        return hash;
+    };
 
     std::mt19937 random_generator;
     random_generator.seed(config::program_seed);
@@ -1484,8 +1152,8 @@ std::vector<env::GamePair<env::go::GoBitboard>> GoEnvLoader::generateNegativeBit
     const int warmup_times = 100;
     const int distance = config::siamese_max_move_distance;
     for (int k = 0; k < index + warmup_times; k++) {
-        int index = int_distribution(random_generator);
-        int pos = pos_list[index];
+        int idx = int_distribution(random_generator);
+        int pos = pos_list[idx];
         std::vector<int> new_pos_list;
         for (int x = -distance; x <= distance; x++) {
             for (int y = -distance; y <= distance; y++) {
@@ -1505,11 +1173,21 @@ std::vector<env::GamePair<env::go::GoBitboard>> GoEnvLoader::generateNegativeBit
                 stone_bitboard.get(env::Player::kPlayer2).test(new_pos)) {
                 continue;
             }
-            pos_list[index] = new_pos;
+            pos_list[idx] = new_pos;
             stone_bitboard.get(env::getNextPlayer(env.getTurn(), 2)).reset(pos);
             stone_bitboard.get(env::getNextPlayer(env.getTurn(), 2)).set(new_pos);
 
             if (k < warmup_times) { break; }
+
+            // Check for duplicate using Zobrist hash
+            GoHashKey hash = computeZobristHash(
+                stone_bitboard.get(Player::kPlayer1),
+                stone_bitboard.get(Player::kPlayer2));
+            if (save_all && seen_hashes.count(hash)) {
+                break; // Skip duplicate
+            }
+            seen_hashes.insert(hash);
+
             if (save_all || outputs.empty()) {
                 outputs.emplace_back(stone_bitboard);
             } else {
