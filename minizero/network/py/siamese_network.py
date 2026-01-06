@@ -16,7 +16,7 @@ class PhantomGoSiamese(nn.Module):
     """
     Siamese network for Phantom Go with two encoders:
     - anchor_encoder: encodes observation history (H*6 x N x N)
-    - board_encoder: encodes board state (4 x N x N)
+    - board_encoder: encodes board state (4 x N x N) - black, white, black's turn, white's turn
     Both produce L2-normalized embeddings in a shared space.
     """
 
@@ -78,7 +78,7 @@ class PhantomGoSiamese(nn.Module):
         """
         Encode board state
         Args:
-            board: (B, 2, N, N) - black and white stone positions
+            board: (B, 4, N, N) - black, white, black's turn, white's turn
         Returns:
             (B, D) L2-normalized embeddings
         """
@@ -92,8 +92,8 @@ class PhantomGoSiamese(nn.Module):
         Forward pass for training
         Args:
             anchor: (B, H*6, N, N)
-            positive: (B, 2, N, N)
-            negative: (B, 2, N, N)
+            positive: (B, 4, N, N)
+            negative: (B, 4, N, N)
         Returns:
             Tuple of (anchor_emb, positive_emb, negative_emb)
         """
@@ -108,7 +108,7 @@ class PhantomGoSiamese(nn.Module):
         Compute pairwise L2 distances between anchors and multiple boards
         Args:
             anchor: (B, H*6, N, N)
-            boards: (B, K, 2, N, N) - K candidate boards per anchor
+            boards: (B, K, 4, N, N) - K candidate boards per anchor
         Returns:
             (B, K) distances
         """
