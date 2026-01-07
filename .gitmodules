@@ -1,0 +1,3 @@
+[submodule "visualizer/wgo.js"]
+	path = visualizer/wgo.js
+	url = git@github.com:waltheri/wgo.js.git
