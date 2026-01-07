@@ -926,64 +926,6 @@ std::unordered_set<int> getUnmovableOpponentPositions(const GoEnvLoader& env_loa
     return (opponent == Player::kPlayer1) ? must_black : must_white;
 }
 
-// ========== Feature Extraction Functions ==========
-
-std::vector<float> extractBoardStateFromBitboard(
-    const GoEnv& ref_env,
-    const GoBitboard& black_bb,
-    const GoBitboard& white_bb,
-    utils::Rotation rotation)
-{
-    const int N = ref_env.getBoardSize();
-    std::vector<float> board_state;
-    board_state.reserve(2 * N * N);
-
-    // Channel 0: Black stones
-    for (int pos = 0; pos < N * N; ++pos) {
-        int rot_pos = ref_env.getRotatePosition(
-            pos, utils::reversed_rotation[static_cast<int>(rotation)]);
-        board_state.push_back(black_bb.test(rot_pos) ? 1.0f : 0.0f);
-    }
-
-    // Channel 1: White stones
-    for (int pos = 0; pos < N * N; ++pos) {
-        int rot_pos = ref_env.getRotatePosition(
-            pos, utils::reversed_rotation[static_cast<int>(rotation)]);
-        board_state.push_back(white_bb.test(rot_pos) ? 1.0f : 0.0f);
-    }
-
-    return board_state;
-}
-
-std::vector<float> extractBoardState(const GoEnv& env, utils::Rotation rotation)
-{
-    const int N = env.getBoardSize();
-    std::vector<float> board_state;
-    board_state.reserve(2 * N * N);
-
-    // Channel 0: Black stones
-    for (int pos = 0; pos < N * N; ++pos) {
-        int rot_pos = env.getRotatePosition(pos, utils::reversed_rotation[static_cast<int>(rotation)]);
-        board_state.push_back(env.getStoneBitboard().get(Player::kPlayer1).test(rot_pos) ? 1.0f : 0.0f);
-    }
-
-    // Channel 1: White stones
-    for (int pos = 0; pos < N * N; ++pos) {
-        int rot_pos = env.getRotatePosition(pos, utils::reversed_rotation[static_cast<int>(rotation)]);
-        board_state.push_back(env.getStoneBitboard().get(Player::kPlayer2).test(rot_pos) ? 1.0f : 0.0f);
-    }
-
-    // Channel 2: Black's turn ?
-    const float black_turn = (env.getTurn() == Player::kPlayer1) ? 1.0f : 0.0f;
-    board_state.insert(board_state.end(), N * N, black_turn);
-
-    // Channel 3: White's turn ?
-    const float white_turn = (env.getTurn() == Player::kPlayer2) ? 1.0f : 0.0f;
-    board_state.insert(board_state.end(), N * N, white_turn);
-
-    return board_state; // 4 * N * N floats
-}
-
 // ========== GoEnvLoader Siamese Learning Methods ==========
 
 std::vector<float> GoEnvLoader::getAnchor(int target_pos, utils::Rotation rotation) const
@@ -1090,7 +1032,7 @@ std::vector<float> GoEnvLoader::getAnchor(int target_pos, utils::Rotation rotati
 std::vector<float> GoEnvLoader::getPositive(int pos, utils::Rotation rotation) const
 {
     GoEnv env = rebuildGoEnvToStep(*this, pos);
-    return extractBoardState(env, rotation);
+    return bitboardToFeature(env.getStoneBitboard(), env.getTurn(), rotation, false);
 }
 
 std::vector<float> GoEnvLoader::getNegative(int pos, utils::Rotation rotation, int index /* = -1*/) const
@@ -1220,11 +1162,11 @@ std::vector<float> GoEnvLoader::bitboardToFeature(const GamePair<GoBitboard>& bi
 
     if (include_history) {
         for (int i = 2 * num_grids; i < 16 * num_grids; ++i) { feature[i] = feature[i % (2 * num_grids)]; }
-        std::fill_n(feature.begin() + 16 * 81, 81, turn == Player::kPlayer1 ? 1.0f : 0.0f);
-        std::fill_n(feature.begin() + 17 * 81, 81, turn == Player::kPlayer2 ? 1.0f : 0.0f);
+        std::fill_n(feature.begin() + 16 * num_grids, num_grids, turn == Player::kPlayer1 ? 1.0f : 0.0f);
+        std::fill_n(feature.begin() + 17 * num_grids, num_grids, turn == Player::kPlayer2 ? 1.0f : 0.0f);
     } else {
-        std::fill_n(feature.begin() + 2 * 81, 81, turn == Player::kPlayer1 ? 1.0f : 0.0f);
-        std::fill_n(feature.begin() + 3 * 81, 81, turn == Player::kPlayer2 ? 1.0f : 0.0f);
+        std::fill_n(feature.begin() + 2 * num_grids, num_grids, turn == Player::kPlayer1 ? 1.0f : 0.0f);
+        std::fill_n(feature.begin() + 3 * num_grids, num_grids, turn == Player::kPlayer2 ? 1.0f : 0.0f);
     }
     return feature;
 }

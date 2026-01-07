@@ -176,8 +176,4 @@ bool breaksSatisfiedMust(
 // Unmovable opponent positions (must-exist stones based on capture history)
 std::unordered_set<int> getUnmovableOpponentPositions(const GoEnvLoader& env_loader, int pos);
 
-// Feature extraction
-std::vector<float> extractBoardStateFromBitboard(const GoEnv& ref_env, const GoBitboard& black_bb, const GoBitboard& white_bb, utils::Rotation rotation);
-std::vector<float> extractBoardState(const GoEnv& env, utils::Rotation rotation);
-
 } // namespace minizero::env::go
