@@ -76,6 +76,16 @@ public:
     inline int getRotatePosition(int position, utils::Rotation rotation) const override { return utils::getPositionByRotating(rotation, position, getBoardSize()); };
     inline int getRotateAction(int action_id, utils::Rotation rotation) const override { return getRotatePosition(action_id, rotation); };
 
+    // Phantom Go helper struct
+    struct MoveInfo {
+        bool legal;
+        std::vector<int> captured_stones;
+    };
+
+    // Phantom Go helper functions
+    int countStones(Player p) const;
+    static MoveInfo analyzeMove(const GoEnv& before, const GoEnv& after, const GoAction& action);
+
 protected:
     void initialize();
     GoBlock* newBlock();
@@ -141,39 +151,26 @@ public:
 
     std::vector<GamePair<GoBitboard>> generateNegativeBitboards(const GoEnv& env, int num, bool save_all /* = false*/) const;
     std::vector<float> bitboardToFeature(const GamePair<GoBitboard>& bitboard, Player turn, utils::Rotation rotation, bool include_history) const;
+
+    // Phantom Go helper struct
+    struct MoveEvent {
+        Player mover;
+        int pos;
+        std::vector<int> captured_stones;
+    };
+
+    // Phantom Go helper functions
+    GoEnv rebuildToStep(int target_pos) const;
+    std::vector<GoEnv> rebuildFullHistory(int target_pos) const;
+    std::vector<MoveEvent> buildMoveEvents(const std::vector<GoEnv>& history) const;
+    std::unordered_set<int> getUnmovableOpponentPositions(int pos) const;
+
+private:
+    static std::pair<std::unordered_set<int>, std::unordered_set<int>> computeMustSets(
+        int move_number,
+        Player perspective,
+        const std::vector<MoveEvent>& events,
+        const std::vector<GoEnv>& history);
 };
-
-// Phantom Go helper structures
-struct MoveInfo {
-    bool legal;
-    std::vector<int> captured_stones;
-};
-
-struct MoveEvent {
-    Player mover;
-    int pos;
-    std::vector<int> captured_stones;
-};
-
-// Phantom Go helper functions
-GoEnv rebuildGoEnvToStep(const GoEnvLoader& env_loader, int target_pos);
-std::vector<GoEnv> rebuildFullHistory(const GoEnvLoader& env_loader, int target_pos);
-MoveInfo analyzeMove(const GoEnv& before, const GoEnv& after, const GoAction& action);
-std::vector<MoveEvent> buildMoveEvents(const std::vector<GoEnv>& history, const GoEnvLoader& env_loader);
-int countStonesOnBoard(const GoEnv& env, Player p);
-
-std::pair<std::unordered_set<int>, std::unordered_set<int>> computeMustSets(
-    int move_number,
-    Player perspective,
-    const std::vector<MoveEvent>& events,
-    const std::vector<GoEnv>& history);
-
-bool breaksSatisfiedMust(
-    const GoEnv& before, const GoEnv& after, const GoAction& a,
-    const std::unordered_set<int>& satisfied_black,
-    const std::unordered_set<int>& satisfied_white);
-
-// Unmovable opponent positions (must-exist stones based on capture history)
-std::unordered_set<int> getUnmovableOpponentPositions(const GoEnvLoader& env_loader, int pos);
 
 } // namespace minizero::env::go

@@ -740,50 +740,19 @@ std::vector<float> GoEnvLoader::getActionFeatures(const int pos, utils::Rotation
     return action_features;
 }
 
-// ========== Phantom Go Helper Functions ==========
+// ========== GoEnv Phantom Go Helper Functions ==========
 
-GoEnv rebuildGoEnvToStep(const GoEnvLoader& env_loader, int target_pos)
+int GoEnv::countStones(Player p) const
 {
-    const int board_size = env_loader.getBoardSize();
-    GoEnv env(board_size);
-
-    const auto& action_pairs = env_loader.getActionPairs();
-    int end_pos = std::min(target_pos, static_cast<int>(action_pairs.size()));
-
-    for (int i = 0; i < end_pos; ++i) {
-        if (!env.act(action_pairs[i].first)) {
-            std::cerr << "Error: Failed to apply action at step " << i << std::endl;
-            break;
-        }
+    const int N = getBoardSize();
+    int cnt = 0;
+    for (int i = 0; i < N * N; ++i) {
+        if (getGrid(i).getPlayer() == p) ++cnt;
     }
-
-    return env;
+    return cnt;
 }
 
-std::vector<GoEnv> rebuildFullHistory(const GoEnvLoader& env_loader, int target_pos)
-{
-    const int board_size = env_loader.getBoardSize();
-    const auto& action_pairs = env_loader.getActionPairs();
-
-    std::vector<GoEnv> history;
-    history.reserve(target_pos + 1);
-
-    GoEnv env(board_size);
-    history.push_back(env); // Initial state
-
-    int end_pos = std::min(target_pos, static_cast<int>(action_pairs.size()));
-    for (int i = 0; i < end_pos; ++i) {
-        if (!env.act(action_pairs[i].first)) {
-            std::cerr << "Error: Failed to apply action at step " << i << std::endl;
-            break;
-        }
-        history.push_back(env);
-    }
-
-    return history;
-}
-
-MoveInfo analyzeMove(const GoEnv& before, const GoEnv& after, const GoAction& action)
+GoEnv::MoveInfo GoEnv::analyzeMove(const GoEnv& before, const GoEnv& after, const GoAction& action)
 {
     MoveInfo info;
     info.legal = true;
@@ -803,11 +772,52 @@ MoveInfo analyzeMove(const GoEnv& before, const GoEnv& after, const GoAction& ac
     return info;
 }
 
-std::vector<MoveEvent> buildMoveEvents(
-    const std::vector<GoEnv>& history,
-    const GoEnvLoader& env_loader)
+// ========== GoEnvLoader Phantom Go Helper Functions ==========
+
+GoEnv GoEnvLoader::rebuildToStep(int target_pos) const
 {
-    const auto& action_pairs = env_loader.getActionPairs();
+    const int board_size = getBoardSize();
+    GoEnv env(board_size);
+
+    const auto& action_pairs = getActionPairs();
+    int end_pos = std::min(target_pos, static_cast<int>(action_pairs.size()));
+
+    for (int i = 0; i < end_pos; ++i) {
+        if (!env.act(action_pairs[i].first)) {
+            std::cerr << "Error: Failed to apply action at step " << i << std::endl;
+            break;
+        }
+    }
+
+    return env;
+}
+
+std::vector<GoEnv> GoEnvLoader::rebuildFullHistory(int target_pos) const
+{
+    const int board_size = getBoardSize();
+    const auto& action_pairs = getActionPairs();
+
+    std::vector<GoEnv> history;
+    history.reserve(target_pos + 1);
+
+    GoEnv env(board_size);
+    history.push_back(env); // Initial state
+
+    int end_pos = std::min(target_pos, static_cast<int>(action_pairs.size()));
+    for (int i = 0; i < end_pos; ++i) {
+        if (!env.act(action_pairs[i].first)) {
+            std::cerr << "Error: Failed to apply action at step " << i << std::endl;
+            break;
+        }
+        history.push_back(env);
+    }
+
+    return history;
+}
+
+std::vector<GoEnvLoader::MoveEvent> GoEnvLoader::buildMoveEvents(const std::vector<GoEnv>& history) const
+{
+    const auto& action_pairs = getActionPairs();
     std::vector<MoveEvent> events;
     events.reserve(action_pairs.size());
 
@@ -816,7 +826,7 @@ std::vector<MoveEvent> buildMoveEvents(
         const GoEnv& after = history[k + 1];
         const GoAction& action = action_pairs[k].first;
 
-        MoveInfo info = analyzeMove(before, after, action);
+        GoEnv::MoveInfo info = GoEnv::analyzeMove(before, after, action);
         MoveEvent ev{action.getPlayer(), action.getActionID(), std::move(info.captured_stones)};
         events.push_back(std::move(ev));
     }
@@ -824,17 +834,7 @@ std::vector<MoveEvent> buildMoveEvents(
     return events;
 }
 
-int countStonesOnBoard(const GoEnv& env, Player p)
-{
-    const int N = env.getBoardSize();
-    int cnt = 0;
-    for (int i = 0; i < N * N; ++i) {
-        if (env.getGrid(i).getPlayer() == p) ++cnt;
-    }
-    return cnt;
-}
-
-std::pair<std::unordered_set<int>, std::unordered_set<int>> computeMustSets(
+std::pair<std::unordered_set<int>, std::unordered_set<int>> GoEnvLoader::computeMustSets(
     int move_number,
     Player perspective,
     const std::vector<MoveEvent>& events,
@@ -890,30 +890,14 @@ std::pair<std::unordered_set<int>, std::unordered_set<int>> computeMustSets(
     return {std::move(must_black), std::move(must_white)};
 }
 
-bool breaksSatisfiedMust(
-    const GoEnv& before, const GoEnv& after, const GoAction& a,
-    const std::unordered_set<int>& satisfied_black,
-    const std::unordered_set<int>& satisfied_white)
-{
-    MoveInfo info = analyzeMove(before, after, a);
-    for (int c : info.captured_stones) {
-        if (a.getPlayer() == Player::kPlayer1) {
-            if (satisfied_white.count(c)) return true;
-        } else {
-            if (satisfied_black.count(c)) return true;
-        }
-    }
-    return false;
-}
-
-std::unordered_set<int> getUnmovableOpponentPositions(const GoEnvLoader& env_loader, int pos)
+std::unordered_set<int> GoEnvLoader::getUnmovableOpponentPositions(int pos) const
 {
     // Rebuild history up to the given position
-    std::vector<GoEnv> history = rebuildFullHistory(env_loader, pos);
-    std::vector<MoveEvent> events = buildMoveEvents(history, env_loader);
+    std::vector<GoEnv> history = rebuildFullHistory(pos);
+    std::vector<MoveEvent> events = buildMoveEvents(history);
 
     // Determine perspective (the player who is about to move)
-    const auto& action_pairs = env_loader.getActionPairs();
+    const auto& action_pairs = getActionPairs();
     Player my_perspective = (pos > 0 && pos <= static_cast<int>(action_pairs.size()))
                                 ? action_pairs[pos - 1].first.nextPlayer()
                                 : Player::kPlayer1;
@@ -938,9 +922,9 @@ std::vector<float> GoEnvLoader::getAnchor(int target_pos, utils::Rotation rotati
     std::vector<float> anchor;
     anchor.reserve(H * C * N * N);
 
-    std::vector<GoEnv> history = rebuildFullHistory(*this, target_pos);
+    std::vector<GoEnv> history = rebuildFullHistory(target_pos);
     const auto& action_pairs = getActionPairs();
-    std::vector<MoveEvent> events = buildMoveEvents(history, *this);
+    std::vector<MoveEvent> events = buildMoveEvents(history);
 
     Player my_perspective = (target_pos > 0 && target_pos <= static_cast<int>(action_pairs.size()))
                                 ? action_pairs[target_pos - 1].first.nextPlayer()
@@ -1031,7 +1015,7 @@ std::vector<float> GoEnvLoader::getAnchor(int target_pos, utils::Rotation rotati
 
 std::vector<float> GoEnvLoader::getPositive(int pos, utils::Rotation rotation) const
 {
-    GoEnv env = rebuildGoEnvToStep(*this, pos);
+    GoEnv env = rebuildToStep(pos);
     return bitboardToFeature(env.getStoneBitboard(), env.getTurn(), rotation, false);
 }
 
@@ -1052,11 +1036,12 @@ std::vector<env::GamePair<env::go::GoBitboard>> GoEnvLoader::generateNegativeBit
 {
     std::vector<env::GamePair<env::go::GoBitboard>> outputs;
     env::GamePair<env::go::GoBitboard> stone_bitboard = env.getStoneBitboard();
-    env::go::GoBitboard opp_bitboard = stone_bitboard.get(env::getNextPlayer(env.getTurn(), 2)); // 361 bit
+    Player opponent = env::getNextPlayer(env.getTurn(), 2);
+    env::go::GoBitboard opp_bitboard = stone_bitboard.get(opponent);
 
     // [Optional] Get unmovable opponent positions based on capture history (time-consuming, comment out if not needed)
     int move_pos = static_cast<int>(env.getActionHistory().size());
-    std::unordered_set<int> unmovable_positions = getUnmovableOpponentPositions(*this, move_pos);
+    std::unordered_set<int> unmovable_positions = getUnmovableOpponentPositions(move_pos);
     // std::unordered_set<int> unmovable_positions; // empty set if disabled
 
     // collect opponent stone positions (excluding unmovable positions)
@@ -1071,22 +1056,9 @@ std::vector<env::GamePair<env::go::GoBitboard>> GoEnvLoader::generateNegativeBit
 
     if (pos_list.empty()) { return outputs; }
 
-    // Hash set for deduplication (using Zobrist hash)
+    // Hash set for deduplication using incremental Zobrist hash
     std::unordered_set<GoHashKey> seen_hashes;
-    const int board_area = getBoardSize() * getBoardSize();
-
-    // Helper lambda to compute Zobrist hash from bitboards
-    auto computeZobristHash = [board_area](const GoBitboard& black_bb, const GoBitboard& white_bb) -> GoHashKey {
-        GoHashKey hash = 0;
-        for (int p = 0; p < board_area; ++p) {
-            if (black_bb.test(p)) {
-                hash ^= getGoGridHashKey(p, Player::kPlayer1);
-            } else if (white_bb.test(p)) {
-                hash ^= getGoGridHashKey(p, Player::kPlayer2);
-            }
-        }
-        return hash;
-    };
+    GoHashKey current_hash = env.getHashKey();
 
     std::mt19937 random_generator;
     random_generator.seed(config::program_seed);
@@ -1116,19 +1088,20 @@ std::vector<env::GamePair<env::go::GoBitboard>> GoEnvLoader::generateNegativeBit
                 continue;
             }
             pos_list[idx] = new_pos;
-            stone_bitboard.get(env::getNextPlayer(env.getTurn(), 2)).reset(pos);
-            stone_bitboard.get(env::getNextPlayer(env.getTurn(), 2)).set(new_pos);
+            stone_bitboard.get(opponent).reset(pos);
+            stone_bitboard.get(opponent).set(new_pos);
+
+            // Incremental hash update: XOR out old position, XOR in new position
+            current_hash ^= getGoGridHashKey(pos, opponent);
+            current_hash ^= getGoGridHashKey(new_pos, opponent);
 
             if (k < warmup_times) { break; }
 
             // Check for duplicate using Zobrist hash
-            GoHashKey hash = computeZobristHash(
-                stone_bitboard.get(Player::kPlayer1),
-                stone_bitboard.get(Player::kPlayer2));
-            if (save_all && seen_hashes.count(hash)) {
+            if (save_all && seen_hashes.count(current_hash)) {
                 break; // Skip duplicate
             }
-            seen_hashes.insert(hash);
+            seen_hashes.insert(current_hash);
 
             if (save_all || outputs.empty()) {
                 outputs.emplace_back(stone_bitboard);
