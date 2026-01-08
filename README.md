@@ -7,6 +7,14 @@
   * nn_file_name = Go model weight
 * Output: Add selected negative boards' ID to sgf (tag "N")
 
+### Visualize training data
+Visualize one positive and all negative boards by given specific game id and step (display each board and its value on website)
+* Use [WGo.js tool](https://wgo.waltheri.net/)
+* `./build/go/minizero_go -mode visualize_sgf -conf_file go.cfg`
+  * `siamese_game_id` for tag I[...]
+  * `siamese_game_step`
+* `./visualizer/run_web.sh`
+
 ## Train siamese
 * Start a container first: `./scripts/start-container.sh`
 ### train-siamese.sh

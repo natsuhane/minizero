@@ -1,19 +1,27 @@
 #include "mode_handler.h"
 #include "actor_group.h"
+#include "alphazero_network.h"
 #include "console.h"
+#include "create_network.h"
 #include "git_info.h"
 #include "iig_data_generator.h"
 #include "obs_recover.h"
 #include "obs_remover.h"
 #include "ostream_redirector.h"
 #include "random.h"
+#include "sgf_loader.h"
+#include "time_system.h"
+#include "utils.h"
 #include "zero_server.h"
+#include <fstream>
+#include <iostream>
 #include <string>
 #include <vector>
 
 namespace minizero::console {
 
 using namespace minizero::utils;
+using namespace minizero::network;
 
 ModeHandler::ModeHandler()
 {
@@ -25,6 +33,7 @@ ModeHandler::ModeHandler()
     RegisterFunction("remove_obs", this, &ModeHandler::runRemoveObs);
     RegisterFunction("recover_obs", this, &ModeHandler::runRecoverObs);
     RegisterFunction("run", this, &ModeHandler::runDataSet);
+    RegisterFunction("visualize_sgf", this, &ModeHandler::runVisualizeSgf);
 }
 
 void ModeHandler::run(int argc, char* argv[])
@@ -209,6 +218,84 @@ void ModeHandler::runDataSet()
     iig_data_generator::IIGDataGenerator data_generator;
     data_generator.run();
     return;
+}
+
+// visualize sgf with positive and negative samples
+void ModeHandler::runVisualizeSgf()
+{
+    // find target game by id
+    EnvironmentLoader env_loader;
+    int target_game_id = config::siamese_game_id;
+    std::ifstream fin(config::siamese_input_record_file_name);
+    std::cerr << "Searching for game id " << target_game_id << std::endl;
+    for (std::string sgf; std::getline(fin, sgf);) {
+        if (!env_loader.loadFromString(sgf) || std::stoi(env_loader.getTag("I")) != target_game_id) { continue; }
+        break;
+    }
+
+    // positive sgf
+    Environment env;
+    std::string positive_sgf;
+    std::vector<std::string> sgf_outputs;
+    int target_game_step = config::siamese_game_step;
+    const std::string sgf_prefix = "<div data-wgo=\"(;FF[4]GM[1]SZ[9]KM[7.000000]";
+    const std::string sgf_suffix = ")\" data-wgo-layout=\"\"  data-wgo-move=\"100\" style=\"width: 10%; margin: 0\"></div>";
+    std::shared_ptr<AlphaZeroNetwork> az_network = std::static_pointer_cast<AlphaZeroNetwork>(createNetwork(config::nn_file_name, 0));
+    std::cerr << "Loaded environment up to step " << target_game_step << std::endl;
+    for (int pos = 0; pos < target_game_step; ++pos) {
+        env.act(env_loader.getActionPairs()[pos].first);
+        positive_sgf += ";" +
+                        std::string(1, env::playerToChar(env_loader.getActionPairs()[pos].first.getPlayer())) +
+                        "[" +
+                        utils::SGFLoader::actionIDToSGFString(env_loader.getActionPairs()[pos].first.getActionID(), env_loader.getBoardSize()) +
+                        "]";
+    }
+    az_network->pushBack(env.getFeatures());
+    sgf_outputs.push_back(sgf_prefix + positive_sgf + sgf_suffix);
+
+    // negative sgfs
+    std::vector<std::string> ids_str_01 = utils::stringToVector(env_loader.getActionPairs()[target_game_step - 1].second["N1"], ",");
+    std::vector<std::string> ids_str_02 = utils::stringToVector(env_loader.getActionPairs()[target_game_step - 1].second["N2"], ",");
+    ids_str_01.insert(ids_str_01.end(), ids_str_02.begin(), ids_str_02.end());
+    auto neg_bitboards = env_loader.generateNegativeBitboards(env, config::siamese_max_random_perturbations, true);
+    for (const auto& id_str : ids_str_01) {
+        int id = std::stoi(id_str);
+        std::string negative_sgf;
+        std::vector<env::Player> players = {env::Player::kPlayer1, env::Player::kPlayer2};
+        for (const auto& player : players) {
+            env::go::GoBitboard bitboard = neg_bitboards[id].get(player);
+            if (bitboard.none()) { continue; }
+            negative_sgf += "A" + std::string(1, env::playerToChar(player));
+            while (!bitboard.none()) {
+                int p = bitboard._Find_first();
+                bitboard.reset(p);
+                negative_sgf += "[" + utils::SGFLoader::actionIDToSGFString(p, env_loader.getBoardSize()) + "]";
+            }
+        }
+        az_network->pushBack(env_loader.bitboardToFeature(neg_bitboards[id], env.getTurn(), utils::Rotation::kRotationNone, true));
+        sgf_outputs.push_back(sgf_prefix + negative_sgf + sgf_suffix);
+    }
+
+    // get values & output all sgfs
+    auto network_output = az_network->forward();
+    std::ofstream fout("visualizer/index.html");
+    fout << "<!DOCTYPE HTML><html><head><meta charset=\"utf-8\"><title>WGo</title><script type=\"text/javascript\" src=\"wgo.js/wgo/wgo.js\"></script><script type=\"text/javascript\" src=\"wgo.js/wgo/kifu.js\"></script><script type=\"text/javascript\" src=\"wgo.js/wgo/sgfparser.js\"></script><script type=\"text/javascript\" src=\"wgo.js/wgo/player.js\"></script><script type=\"text/javascript\" src=\"wgo.js/wgo/basicplayer.js\"></script><script type=\"text/javascript\" src=\"wgo.js/wgo/basicplayer.component.js\"></script><script type=\"text/javascript\" src=\"wgo.js/wgo/basicplayer.infobox.js\"></script><script type=\"text/javascript\" src=\"wgo.js/wgo/basicplayer.commentbox.js\"></script><script type=\"text/javascript\" src=\"wgo.js/wgo/basicplayer.control.js\"></script><link rel=\"stylesheet\" type=\"text/css\" href=\"wgo.js/wgo/wgo.player.css\" /></head><body><div style=\"display: flex; flex-wrap: wrap; width: 100%;\">";
+    float postive_value = std::static_pointer_cast<AlphaZeroNetworkOutput>(network_output[0])->value_;
+    for (size_t i = 0; i < sgf_outputs.size(); ++i) {
+        fout << sgf_outputs[i] << std::endl;
+
+        // output values
+        if (i % 10 != 9 && i != sgf_outputs.size() - 1) { continue; }
+        for (size_t j = i - i % 10; j <= i && j < sgf_outputs.size(); ++j) {
+            fout << "<div style=\"width: 10%; margin: 0; text-align: center;\">"
+                 << std::fixed << std::setprecision(3)
+                 << std::static_pointer_cast<AlphaZeroNetworkOutput>(network_output[j])->value_
+                 << "(" << std::static_pointer_cast<AlphaZeroNetworkOutput>(network_output[j])->value_ - postive_value << ")"
+                 << "</div>" << std::endl;
+        }
+    }
+    fout << "</body></html>";
+    fout.close();
 }
 
 } // namespace minizero::console

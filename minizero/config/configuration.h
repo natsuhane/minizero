@@ -86,6 +86,8 @@ extern float siamese_value_threshold;
 extern int siamese_max_random_perturbations;
 extern std::string siamese_input_record_file_name;
 extern std::string siamese_output_record_file_name;
+extern int siamese_game_id;
+extern int siamese_game_step;
 
 // environment parameters
 extern int env_board_size;

@@ -84,6 +84,8 @@ float siamese_value_threshold = 0.1f;
 int siamese_max_random_perturbations = 1000;
 std::string siamese_input_record_file_name = "";
 std::string siamese_output_record_file_name = "";
+int siamese_game_id = 0;
+int siamese_game_step = 0;
 
 // environment parameters
 int env_board_size = 0;
@@ -184,6 +186,8 @@ void setConfiguration(ConfigureLoader& cl)
     cl.addParameter("siamese_max_random_perturbations", siamese_max_random_perturbations, "the number of selecting a stone and move it to all possible surrounding positions", "Siamese");
     cl.addParameter("siamese_input_record_file_name", siamese_input_record_file_name, "for generate dataset, the directory of input selfplay data", "Siamese");
     cl.addParameter("siamese_output_record_file_name", siamese_output_record_file_name, "for generate dataset, the directory of output file", "Siamese");
+    cl.addParameter("siamese_game_id", siamese_game_id, "the game id for transforming sgf", "Siamese");
+    cl.addParameter("siamese_game_step", siamese_game_step, "the game step for transforming sgf", "Siamese");
 
     // environment parameters
     cl.addParameter("env_board_size", env_board_size, "the size of board", "Environment");

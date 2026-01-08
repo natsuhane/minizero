@@ -50,6 +50,7 @@ protected:
     virtual void runRemoveObs();
     virtual void runRecoverObs();
     void runDataSet();
+    void runVisualizeSgf();
 
     std::map<std::string, std::shared_ptr<BaseFunction>> function_map_;
 };
