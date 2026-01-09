@@ -79,7 +79,6 @@ extern std::string siamese_mode;
 extern int siamese_num_negatives;
 extern int siamese_eval_num_negatives;
 extern std::string siamese_sampling_strategy;
-extern float siamese_move_stone_ratio;
 extern bool siamese_debug_output;
 extern int siamese_max_move_distance;
 extern float siamese_value_threshold;

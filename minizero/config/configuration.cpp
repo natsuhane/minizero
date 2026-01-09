@@ -77,7 +77,6 @@ std::string siamese_mode = "training";
 int siamese_num_negatives = 5;
 int siamese_eval_num_negatives = 100;
 std::string siamese_sampling_strategy = "random_move_piece";
-float siamese_move_stone_ratio = 0.8f;
 bool siamese_debug_output = false;
 int siamese_max_move_distance = 0;
 float siamese_value_threshold = 0.1f;
@@ -178,8 +177,7 @@ void setConfiguration(ConfigureLoader& cl)
     cl.addParameter("siamese_mode", siamese_mode, "the mode of siamese network: training/testing", "Siamese");
     cl.addParameter("siamese_num_negatives", siamese_num_negatives, "the number of candidate negative boards sampled per anchor during training", "Siamese");
     cl.addParameter("siamese_eval_num_negatives", siamese_eval_num_negatives, "the number of negative boards returned per (anchor, positive) during evaluation/testing", "Siamese");
-    cl.addParameter("siamese_sampling_strategy", siamese_sampling_strategy, "the sampling strategy for negative boards: random/move_stone/hybrid/random_move_piece/filter_by_value", "Siamese");
-    cl.addParameter("siamese_move_stone_ratio", siamese_move_stone_ratio, "the ratio of move_stone samples in hybrid mode (0.0-1.0)", "Siamese");
+    cl.addParameter("siamese_sampling_strategy", siamese_sampling_strategy, "the sampling strategy for negative boards: random_move_piece/filter_by_value", "Siamese");
     cl.addParameter("siamese_debug_output", siamese_debug_output, "whether to print debug board visualization output", "Siamese");
     cl.addParameter("siamese_max_move_distance", siamese_max_move_distance, "the maximum Manhattan distance for moving stones", "Siamese");
     cl.addParameter("siamese_value_threshold", siamese_value_threshold, "the threshold to filter possible negative boards by value", "Siamese");
