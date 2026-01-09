@@ -73,10 +73,12 @@ class Model:
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         self.optimizer = None
         self.scheduler = None
-        self.loss_fn = TripletLoss(margin=1.0)
+        self.loss_fn = None
+        self.network_type = None
 
     def load_model(self, training_dir, model_file):
         self.training_step = 0
+        self.network_type = py.get_nn_type_name()
         anchor_channels = 72
         self.network = create_network(py.get_game_name(),
                                       anchor_channels,  # Use 72 for anchor input channels
@@ -90,8 +92,14 @@ class Model:
                                       py.get_nn_action_size(),
                                       py.get_nn_num_value_hidden_channels(),
                                       py.get_nn_discrete_value_size(),
-                                      py.get_nn_type_name())
+                                      self.network_type)
         self.network.to(self.device)
+
+        # Set loss function based on network type
+        if self.network_type == "siamese":
+            self.loss_fn = TripletLoss(margin=1.0)
+        elif self.network_type == "binary_cnn":
+            self.loss_fn = nn.BCEWithLogitsLoss()
         if py.get_optimizer().lower() == "adam":
             self.optimizer = optim.Adam(self.network.parameters(),
                                         lr=py.get_learning_rate(),
@@ -146,9 +154,18 @@ def train(model, training_dir, data_loader, start_iter, end_iter):
         model.optimizer.zero_grad()
         anchor, positive, negative = data_loader.sample_data(model.device)
 
-        anchor_emb, positive_emb, negative_emb = model.network(anchor, positive, negative)
-
-        loss = model.loss_fn(anchor_emb, positive_emb, negative_emb)
+        if model.network_type == "siamese":
+            # Siamese Network: Triplet Loss
+            anchor_emb, positive_emb, negative_emb = model.network(anchor, positive, negative)
+            loss = model.loss_fn(anchor_emb, positive_emb, negative_emb)
+        elif model.network_type == "binary_cnn":
+            # Binary CNN: BCE Loss
+            B = anchor.shape[0]
+            pos_logits = model.network(anchor, positive)  # (B, 1)
+            neg_logits = model.network(anchor, negative)  # (B, 1)
+            logits = torch.cat([pos_logits, neg_logits], dim=0)  # (2B, 1)
+            labels = torch.cat([torch.ones(B), torch.zeros(B)]).to(model.device)
+            loss = model.loss_fn(logits.squeeze(), labels)
 
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.network.parameters(), max_norm=1.0)
@@ -156,26 +173,41 @@ def train(model, training_dir, data_loader, start_iter, end_iter):
         model.scheduler.step()
 
         model.training_step += 1
-        add_training_info(training_info, 'triplet_loss', loss.item())
 
-        # Compute distance metrics
-        with torch.no_grad():
-            d_ap = torch.norm(anchor_emb - positive_emb, dim=1)
-            d_an = torch.norm(anchor_emb - negative_emb, dim=1)
+        # Compute metrics based on network type
+        if model.network_type == "siamese":
+            add_training_info(training_info, 'triplet_loss', loss.item())
+            with torch.no_grad():
+                d_ap = torch.norm(anchor_emb - positive_emb, dim=1)
+                d_an = torch.norm(anchor_emb - negative_emb, dim=1)
 
-            # distance difference
-            margin = d_an - d_ap
-            add_training_info(training_info, 'margin', margin.mean().item())
+                # distance difference
+                margin = d_an - d_ap
+                add_training_info(training_info, 'margin', margin.mean().item())
 
-            success_rate = (margin > model.loss_fn.margin).float().mean().item()
+                success_rate = (margin > model.loss_fn.margin).float().mean().item()
 
-            # Success rate (margin > 1.0)
-            add_training_info(training_info, 'success_rate', success_rate)
+                # Success rate (margin > 1.0)
+                add_training_info(training_info, 'success_rate', success_rate)
 
-            add_training_info(training_info, 'dist_ap', d_ap.mean().item())
-            add_training_info(training_info, 'dist_an', d_an.mean().item())
-            add_training_info(training_info, 'dist_ap_std', d_ap.std().item())
-            add_training_info(training_info, 'dist_an_std', d_an.std().item())
+                add_training_info(training_info, 'dist_ap', d_ap.mean().item())
+                add_training_info(training_info, 'dist_an', d_an.mean().item())
+                add_training_info(training_info, 'dist_ap_std', d_ap.std().item())
+                add_training_info(training_info, 'dist_an_std', d_an.std().item())
+        elif model.network_type == "binary_cnn":
+            # Use loss_xxx and accuracy_xxx format for analysis.py compatibility
+            add_training_info(training_info, 'loss_bce', loss.item())
+            with torch.no_grad():
+                probs = torch.sigmoid(logits.squeeze())
+                preds = (probs > 0.5).float()
+                accuracy = (preds == labels).float().mean().item()
+                add_training_info(training_info, 'accuracy_total', accuracy)
+
+                # Separate accuracy for positive and negative samples
+                pos_acc = (preds[:B] == labels[:B]).float().mean().item()
+                neg_acc = (preds[B:] == labels[B:]).float().mean().item()
+                add_training_info(training_info, 'accuracy_pos', pos_acc)
+                add_training_info(training_info, 'accuracy_neg', neg_acc)
 
         if model.training_step != 0 and model.training_step % py.get_training_display_step() == 0:
             eprint("[{}] nn step {}, lr: {}.".format(

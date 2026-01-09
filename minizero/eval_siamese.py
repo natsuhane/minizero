@@ -58,8 +58,10 @@ class Model:
     def __init__(self):
         self.network = None
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        self.network_type = None
 
     def load_model(self, training_dir, model_file):
+        self.network_type = py.get_nn_type_name()
         anchor_channels = 72
         self.network = create_network(py.get_game_name(),
                                       anchor_channels,  # Use 72 for anchor input channels
@@ -73,7 +75,7 @@ class Model:
                                       py.get_nn_action_size(),
                                       py.get_nn_num_value_hidden_channels(),
                                       py.get_nn_discrete_value_size(),
-                                      py.get_nn_type_name())
+                                      self.network_type)
         self.network.to(self.device)
 
         if model_file:
@@ -208,35 +210,84 @@ def evaluate(model, testing_dataset, data_loader, training_dir):
             for i in range(1, 10000):
                 anchor, positive, negative, move_numbers = data_loader.sample_data(model.device)
 
-                for n in range(py.get_siamese_eval_num_negatives()):
-                    negative_n = negative[:, n, :, :, :]
-                    if negative_n.sum() == 0:  # filter
-                        continue
+                if model.network_type == "siamese":
+                    # Siamese Network evaluation: per-negative comparison
+                    for n in range(py.get_siamese_eval_num_negatives()):
+                        negative_n = negative[:, n, :, :, :]
+                        if negative_n.sum() == 0:  # filter
+                            continue
 
-                    anchor_emb, positive_emb, negative_emb = model.network(anchor, positive, negative_n)
+                        anchor_emb, positive_emb, negative_emb = model.network(anchor, positive, negative_n)
 
-                    # Compute distance metrics
-                    d_ap = torch.norm(anchor_emb - positive_emb, dim=1)
-                    d_an = torch.norm(anchor_emb - negative_emb, dim=1)
+                        # Compute distance metrics
+                        d_ap = torch.norm(anchor_emb - positive_emb, dim=1)
+                        d_an = torch.norm(anchor_emb - negative_emb, dim=1)
 
-                    # distance difference
-                    margin = d_an - d_ap
+                        # distance difference
+                        margin = d_an - d_ap
 
-                    # Write to log file (per-sample with move number)
+                        # Write to log file (per-sample with move number)
+                        for b in range(len(move_numbers)):
+                            success = 1 if margin[b] > 1.0 else 0
+                            eval_log.write(f"move:{move_numbers[b]} margin:{margin[b].item():.6f} success:{success}\n")
+                        eval_log.flush()  # Ensure data is written immediately
+
+                        # Success rate (margin > 1.0)
+                        success_rate = (margin > 1.0).float().mean().item()
+
+                        # print progress
+                        print(f"Step {i}, Negative {n}:")
+                        print(f"  Margin (d_an - d_ap): {margin.mean().item():.4f}")
+                        print(f"  Distance AP (d_ap): {d_ap.mean().item():.4f} ± {d_ap.std().item():.4f}")
+                        print(f"  Distance AN (d_an): {d_an.mean().item():.4f} ± {d_an.std().item():.4f}")
+                        print(f"  Success Rate: {success_rate:.4f}")
+
+                elif model.network_type == "binary_cnn":
+                    # Binary CNN evaluation: compare positive vs all negatives
+                    B = anchor.shape[0]
+                    num_neg = py.get_siamese_eval_num_negatives()
+
+                    # Compute logit for positive
+                    pos_logits = model.network(anchor, positive)  # (B, 1)
+
+                    # Compute logits for all negatives
+                    neg_logits_list = []
+                    for n in range(num_neg):
+                        negative_n = negative[:, n, :, :, :]
+                        if negative_n.sum() == 0:
+                            neg_logits_list.append(torch.full((B, 1), float('-inf'), device=model.device))
+                        else:
+                            neg_logits_list.append(model.network(anchor, negative_n))  # (B, 1)
+
+                    neg_logits = torch.cat(neg_logits_list, dim=1)  # (B, num_neg)
+
+                    # Combine: positive at index 0, negatives at index 1..num_neg
+                    all_logits = torch.cat([pos_logits, neg_logits], dim=1)  # (B, 1+num_neg)
+
+                    # Softmax to get weights
+                    weights = torch.softmax(all_logits, dim=1)  # (B, 1+num_neg)
+
+                    # Success: positive (index 0) has highest weight
+                    best_idx = weights.argmax(dim=1)  # (B,)
+                    success_flags = (best_idx == 0).float()
+
+                    # Compute margin-like metric: logit_pos - max(logit_neg)
+                    max_neg_logits = neg_logits.max(dim=1).values  # (B,)
+                    margin = pos_logits.squeeze() - max_neg_logits  # (B,)
+
+                    # Write to log file
                     for b in range(len(move_numbers)):
-                        success = 1 if margin[b] > 1.0 else 0
+                        success = 1 if success_flags[b] > 0.5 else 0
                         eval_log.write(f"move:{move_numbers[b]} margin:{margin[b].item():.6f} success:{success}\n")
-                    eval_log.flush()  # Ensure data is written immediately
+                    eval_log.flush()
 
-                    # Success rate (margin > 1.0)
-                    success_rate = (margin > 1.0).float().mean().item()
+                    success_rate = success_flags.mean().item()
+                    pos_weight_mean = weights[:, 0].mean().item()
 
-                    # print progress
-                    print(f"Step {i}, Negative {n}:")
-                    print(f"  Margin (d_an - d_ap): {margin.mean().item():.4f}")
-                    print(f"  Distance AP (d_ap): {d_ap.mean().item():.4f} ± {d_ap.std().item():.4f}")
-                    print(f"  Distance AN (d_an): {d_an.mean().item():.4f} ± {d_an.std().item():.4f}")
-                    print(f"  Success Rate: {success_rate:.4f}")
+                    print(f"Step {i}:")
+                    print(f"  Success Rate (pos has max weight): {success_rate:.4f}")
+                    print(f"  Margin (logit_pos - max_logit_neg): {margin.mean().item():.4f}")
+                    print(f"  Positive Weight (mean): {pos_weight_mean:.4f}")
 
     print(f"\nLog saved to: {log_path}")
 

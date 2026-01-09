@@ -2,6 +2,7 @@ from .alphazero_network import AlphaZeroNetwork
 from .muzero_network import MuZeroNetwork
 from .muzero_atari_network import MuZeroAtariNetwork
 from .siamese_network import SiameseNetwork
+from .binary_cnn_network import BinaryCNNNetwork
 
 
 def create_network(game_name="tietactoe",
@@ -38,6 +39,13 @@ def create_network(game_name="tietactoe",
                                  input_channel_width,
                                  num_hidden_channels,
                                  num_blocks)
+    elif network_type_name == "binary_cnn":
+        network = BinaryCNNNetwork(game_name,
+                                   num_input_channels,
+                                   input_channel_height,
+                                   input_channel_width,
+                                   num_hidden_channels,
+                                   num_blocks)
     elif network_type_name == "muzero":
         if "atari" in game_name:
             network = MuZeroAtariNetwork(game_name,

@@ -170,7 +170,7 @@ void setConfiguration(ConfigureLoader& cl)
     cl.addParameter("nn_num_blocks", nn_num_blocks, "hyperparameter for the model; the number of the residual blocks", "Network");                                                  // ref: AGZ
     cl.addParameter("nn_num_hidden_channels", nn_num_hidden_channels, "hyperparameter for the model; the size of the hidden channels in residual blocks", "Network");               // ref: AGZ
     cl.addParameter("nn_num_value_hidden_channels", nn_num_value_hidden_channels, "hyperparameter for the model; the size of the hidden channels in the value network", "Network"); // ref: AGZ
-    cl.addParameter("nn_type_name", nn_type_name, "the type of training algorithm and network: alphazero/muzero", "Network");
+    cl.addParameter("nn_type_name", nn_type_name, "the type of training algorithm and network: alphazero/muzero/siamese/binary_cnn", "Network");
     cl.addParameter("num_networks_per_GPU", num_networks_per_GPU, "the number of networks to be loaded on each GPU", "Network");
     cl.addParameter("nn_snapshot_interval", nn_snapshot_interval, "the interval (in training steps) to save snapshot of the neural network during training; 0 means disabling snapshot", "Network");
 
