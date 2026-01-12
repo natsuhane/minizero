@@ -165,12 +165,12 @@ void ModeHandler::runZeroServer()
 
 void ModeHandler::runZeroTrainingName()
 {
-    std::cout << Environment().name()                             // name for environment
-              << "_" << config::nn_type_name                      // network & training algorithm
-              << "_" << config::nn_num_blocks << "b"              // number of blocks
-              << "x" << config::nn_num_hidden_channels            // number of hidden channels
-              << "_k" << config::siamese_max_random_perturbations // siamese max random perturbations
-              << "-" << GIT_SHORT_HASH << std::endl;              // git hash info
+    std::cout << Environment().name()                      // name for environment
+              << "_" << config::nn_type_name               // network & training algorithm
+              << "_" << config::nn_num_blocks << "b"       // number of blocks
+              << "x" << config::nn_num_hidden_channels     // number of hidden channels
+              << "_k" << config::siamese_max_num_negatives // siamese max random perturbations
+              << "-" << GIT_SHORT_HASH << std::endl;       // git hash info
 }
 
 void ModeHandler::runEnvTest()
@@ -226,7 +226,7 @@ void ModeHandler::runVisualizeSgf()
     // find target game by id
     EnvironmentLoader env_loader;
     int target_game_id = config::siamese_game_id;
-    std::ifstream fin(config::siamese_input_record_file_name);
+    std::ifstream fin(config::siamese_visualizer_input_sgf);
     std::cerr << "Searching for game id " << target_game_id << std::endl;
     for (std::string sgf; std::getline(fin, sgf);) {
         if (!env_loader.loadFromString(sgf) || std::stoi(env_loader.getTag("I")) != target_game_id) { continue; }

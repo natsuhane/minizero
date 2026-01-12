@@ -40,7 +40,7 @@ else
 	gpu_list=$(echo $num_gpu | awk '{for(i=0;i<$1;i++)printf i}')
 	batch_size=64
 	max_num_cpu_thread_per_gpu=4
-	additional_conf_str=""
+	overwrite_conf_str=""
 fi
 
 train_dir=""
@@ -65,7 +65,7 @@ while :; do
 		;;
 		-c|--cpu_thread_per_gpu) shift; max_num_cpu_thread_per_gpu=$1
 		;;
-		-conf_str) shift; additional_conf_str=":$1"
+		-conf_str) shift; overwrite_conf_str=":$1"
 		;;
 		--link_sgf) shift; link_sgf=$1
 		;;

@@ -117,7 +117,7 @@ protected:
     std::mutex mutex_;
     std::vector<torch::Tensor> tensor_input_;
 
-    const int kReserved_batch_size = 4096;
+    const int kReserved_batch_size = 16384;
 };
 
 } // namespace minizero::network

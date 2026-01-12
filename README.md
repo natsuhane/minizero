@@ -3,7 +3,7 @@
 ## Training data
 ### Generate from Go model self-play
 * `./build/go/minizero_go -mode run -conf_file go.cfg`
-  * siamese_input_record_file_name = sp data sgf
+  * siamese_generator_input_sgf = sp data (.sgf)
   * nn_file_name = Go model weight
 * Output: Add selected negative boards' ID to sgf (tag "N")
 
@@ -11,6 +11,7 @@
 Visualize one positive and all negative boards by given specific game id and step (display each board and its value on website)
 * Use [WGo.js tool](https://wgo.waltheri.net/)
 * `./build/go/minizero_go -mode visualize_sgf -conf_file go.cfg`
+  * `siamese_visualizer_input_sgf` for pre-generated filter_by_value dataset
   * `siamese_game_id` for tag I[...]
   * `siamese_game_step`
 * `./visualizer/run_web.sh`
@@ -40,13 +41,10 @@ Visualize one positive and all negative boards by given specific game id and ste
 * Add figures: See tools/analysis.py **"triplet_loss"**
 
 ## Evaluate
-* Run minizero/eval_siamese.py
-  * `python eval_siamese.py game_type training_dir conf_file testing_dataset`
-  * Example: `python minizero/eval_siamese.py go go_9x9_sz_1bx256_n50-ed3882-dirty go-test.cfg sgf-test`
-  ```
-  /sgf-test
-  --1.sgf
-  ```
+* Run modehandler
+  * `./build/go/minizero_go -conf_file [conf_file] -mode evaluator -conf_str [optional]`
+  * Example: `./build/go/minizero_go -conf_file go.cfg -mode evaluator -conf_str siamese_nn_file_name=go_9x9_siamese_1bx256_k5000-b4d1da-dirty/model/weight_iter_10000.pt:siamese_eval_sgf_file_name=test.sgf`
+
 * Output: `{training_dir}/eval_analysis/`
   * `eval.log` - per-sample metrics (step, margin, success)
   * `success_rate_by_step.png` - success rate chart binned by 10 steps

@@ -190,7 +190,7 @@ bool DataLoaderThread::sampleData()
     int batch_index = getSharedData()->getNextBatchIndex();
     if (batch_index >= config::learner_batch_size) { return false; }
 
-    if (config::nn_type_name == "siamese" || config::nn_type_name == "binary_cnn") {
+    if (config::siamese_nn_type_name == "siamese" || config::siamese_nn_type_name == "binary_cnn") {
         if (config::siamese_mode == "training") {
             setIIGTrainingData(batch_index);
         } else if (config::siamese_mode == "testing") {

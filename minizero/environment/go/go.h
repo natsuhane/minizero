@@ -145,9 +145,9 @@ public:
     inline int getRotateAction(int action_id, utils::Rotation rotation) const override { return getRotatePosition(action_id, rotation); };
 
     // Siamese learning methods
-    std::vector<float> getAnchor(int pos, utils::Rotation rotation) const;
-    std::vector<float> getPositive(int pos, utils::Rotation rotation) const;
-    std::vector<float> getNegative(int pos, utils::Rotation rotation, int index = -1) const;
+    std::vector<float> getAnchor(int pos, utils::Rotation rotation = utils::Rotation::kRotationNone) const;
+    std::vector<float> getPositive(int pos, utils::Rotation rotation = utils::Rotation::kRotationNone) const;
+    std::vector<float> getNegative(int pos, utils::Rotation rotation = utils::Rotation::kRotationNone, int index = -1) const;
 
     std::vector<GamePair<GoBitboard>> generateNegativeBitboards(const GoEnv& env, int num, bool save_all /* = false*/) const;
     std::vector<float> bitboardToFeature(const GamePair<GoBitboard>& bitboard, Player turn, utils::Rotation rotation, bool include_history) const;

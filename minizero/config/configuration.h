@@ -75,16 +75,21 @@ extern int num_networks_per_GPU;
 extern int nn_snapshot_interval;
 
 // siamese parameters
+extern std::string siamese_nn_type_name;
+extern std::string siamese_nn_file_name;
 extern std::string siamese_mode;
-extern int siamese_num_negatives;
+extern std::string siamese_train_sgf_file_name;
+extern std::string siamese_eval_sgf_file_name;
 extern int siamese_eval_num_negatives;
 extern std::string siamese_sampling_strategy;
 extern bool siamese_debug_output;
 extern int siamese_max_move_distance;
 extern float siamese_value_threshold;
-extern int siamese_max_random_perturbations;
-extern std::string siamese_input_record_file_name;
-extern std::string siamese_output_record_file_name;
+extern int siamese_max_num_negatives;
+extern std::string siamese_generator_input_sgf;
+extern std::string siamese_generator_output_sgf;
+extern float siamese_generator_policy_threshold;
+extern std::string siamese_visualizer_input_sgf;
 extern int siamese_game_id;
 extern int siamese_game_step;
 

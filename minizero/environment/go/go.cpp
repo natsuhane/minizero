@@ -912,7 +912,7 @@ std::unordered_set<int> GoEnvLoader::getUnmovableOpponentPositions(int pos) cons
 
 // ========== GoEnvLoader Siamese Learning Methods ==========
 
-std::vector<float> GoEnvLoader::getAnchor(int target_pos, utils::Rotation rotation) const
+std::vector<float> GoEnvLoader::getAnchor(int target_pos, utils::Rotation rotation /*= utils::Rotation::kRotationNone*/) const
 {
     const int N = getBoardSize();
     const int H = 12; // history length
@@ -1021,15 +1021,20 @@ std::vector<float> GoEnvLoader::getPositive(int pos, utils::Rotation rotation) c
 
 std::vector<float> GoEnvLoader::getNegative(int pos, utils::Rotation rotation, int index /* = -1*/) const
 {
-    GoEnv env;
-    const auto& action_pairs = getActionPairs();
-    for (int i = 0; i < pos; ++i) { env.act(action_pairs[i].first); }
+    if (config::siamese_sampling_strategy == "random_move_piece" || "filter_by_value") {
+        GoEnv env;
+        const auto& action_pairs = getActionPairs();
+        for (int i = 0; i < pos; ++i) { env.act(action_pairs[i].first); }
 
-    auto neg_bitboards = generateNegativeBitboards(env, (index > 0 ? index : (utils::Random::randInt() % config::siamese_max_random_perturbations)), false);
-    if (neg_bitboards.empty()) {
+        // TODO: neg_bitboards can be empty? how to handle? (maple) low
+        auto neg_bitboards = generateNegativeBitboards(env, (index > 0 ? index : (utils::Random::randInt() % config::siamese_max_num_negatives)), false);
+        if (neg_bitboards.empty()) {
+            return {};
+        }
+        return bitboardToFeature(neg_bitboards[0], env.getTurn(), rotation, false);
+    } else {
         return {};
     }
-    return bitboardToFeature(neg_bitboards[0], env.getTurn(), rotation, false);
 }
 
 std::vector<env::GamePair<env::go::GoBitboard>> GoEnvLoader::generateNegativeBitboards(const GoEnv& env, int index, bool save_all /* = false*/) const
@@ -1120,17 +1125,15 @@ std::vector<float> GoEnvLoader::bitboardToFeature(const GamePair<GoBitboard>& bi
     const int num_grids = getBoardSize() * getBoardSize();
     std::vector<float> feature(num_channels * num_grids, 0.0f);
 
-    GoBitboard tmp = bitboard.get(Player::kPlayer1);
-    while (!tmp.none()) {
-        int pos = tmp._Find_first();
-        tmp.reset(pos);
-        feature[getRotatePosition(pos, rotation)] = 1.0f;
-    }
-    tmp = bitboard.get(Player::kPlayer2);
-    while (!tmp.none()) {
-        int pos = tmp._Find_first();
-        tmp.reset(pos);
-        feature[getRotatePosition(pos, rotation) + num_grids] = 1.0f;
+    std::vector<env::Player> players = {env::Player::kPlayer1, env::Player::kPlayer2};
+    for (const auto& player : players) {
+        GoBitboard tmp = bitboard.get(player);
+        while (!tmp.none()) {
+            int pos = tmp._Find_first();
+            if (pos < 0 || pos >= num_grids) { break; }
+            tmp.reset(pos);
+            feature[getRotatePosition(pos, rotation) + (player == turn ? 0 : num_grids)] = 1.0f;
+        }
     }
 
     if (include_history) {
