@@ -4,9 +4,12 @@
 #include "go.h"
 #include "network.h"
 #include "paralleler.h"
+#include <array>
+#include <deque>
 #include <memory>
 #include <mutex>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace minizero::iig_data_generator {
@@ -35,9 +38,20 @@ public:
     bool isDone() override { return is_done; }
 
 private:
+    class EnvWithLegalActions {
+    public:
+        bool is_valid;
+        Environment env;
+        std::vector<std::pair<Action, float>> legal_actions;
+
+        EnvWithLegalActions() { is_valid = true; }
+        EnvWithLegalActions(const Environment& e, const std::vector<std::pair<Action, float>>& la) : env(e), legal_actions(la) { is_valid = true; }
+    };
+
     bool is_done;
 
-    std::vector<int> filterBoards(const Environment& env, const EnvironmentLoader& env_loader, std::vector<minizero::env::GamePair<minizero::env::go::GoBitboard>>& negative_outputs, float threshold);
+    void genNegativeByPolicy(EnvironmentLoader& env_loader);
+    void assignLegalActionProbabilities(std::vector<EnvWithLegalActions>& info_set_envs, const std::vector<std::shared_ptr<minizero::network::NetworkOutput>>& nn_outputs);
     std::string idtoString(const std::vector<int>& neg_ids);
     inline std::shared_ptr<ThreadSharedData> getSharedData() { return std::static_pointer_cast<ThreadSharedData>(shared_data_); }
 };

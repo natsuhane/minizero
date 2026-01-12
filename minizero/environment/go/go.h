@@ -50,6 +50,7 @@ public:
     float getReward() const override { return 0.0f; }
     float getEvalScore(bool is_resign = false) const override;
     std::vector<float> getFeatures(utils::Rotation rotation = utils::Rotation::kRotationNone) const override;
+    std::vector<float> getSiameseFeatures(utils::Rotation rotation = utils::Rotation::kRotationNone) const;
     std::vector<float> getActionFeatures(const GoAction& action, utils::Rotation rotation = utils::Rotation::kRotationNone) const override;
     inline int getNumInputChannels() const override { return 18; }
     inline int getPolicySize() const override { return getBoardSize() * getBoardSize() + 1; }
@@ -149,7 +150,8 @@ public:
     std::vector<float> getPositive(int pos, utils::Rotation rotation = utils::Rotation::kRotationNone) const;
     std::vector<float> getNegative(int pos, utils::Rotation rotation = utils::Rotation::kRotationNone, int index = -1) const;
 
-    std::vector<GamePair<GoBitboard>> generateNegativeBitboards(const GoEnv& env, int num, bool save_all /* = false*/) const;
+    std::vector<GoAction> getNegativeActionHistory(int pos, int negative_id) const;
+    std::vector<GamePair<GoBitboard>> generateNegativeBitboards(const GoEnv& env, int num, bool save_all = false) const;
     std::vector<float> bitboardToFeature(const GamePair<GoBitboard>& bitboard, Player turn, utils::Rotation rotation, bool include_history) const;
 
     // Phantom Go helper struct

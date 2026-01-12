@@ -6,6 +6,7 @@
 #include "sgf_loader.h"
 #include <algorithm>
 #include <atomic>
+#include <deque>
 #include <iostream>
 #include <random>
 #include <sstream>
@@ -309,6 +310,36 @@ std::vector<float> GoEnv::getFeatures(utils::Rotation rotation /*= utils::Rotati
             }
         }
     }
+    return features;
+}
+
+std::vector<float> GoEnv::getSiameseFeatures(utils::Rotation rotation /*= utils::Rotation::kRotationNone*/) const
+{
+    /* 4 channels:
+            0~1. own/opponent position for last turns
+            2. black turn
+            3. white turn
+    */
+    // TODO: check if the following is correct (maple) vvv
+    std::vector<float> features;
+    for (int channel = 0; channel < 4; ++channel) {
+        for (int pos = 0; pos < board_size_ * board_size_; ++pos) {
+            int rotation_pos = getRotatePosition(pos, utils::reversed_rotation[static_cast<int>(rotation)]);
+            if (channel < 2) {
+                if (stone_bitboard_history_.empty()) {
+                    features.push_back(0.0f);
+                } else {
+                    Player player = (channel % 2 == 0 ? turn_ : getNextPlayer(turn_, kGoNumPlayer));
+                    features.push_back(stone_bitboard_history_.back().get(player).test(rotation_pos) ? 1.0f : 0.0f);
+                }
+            } else if (channel == 2) {
+                features.push_back((turn_ == Player::kPlayer1 ? 1.0f : 0.0f));
+            } else if (channel == 3) {
+                features.push_back((turn_ == Player::kPlayer2 ? 1.0f : 0.0f));
+            }
+        }
+    }
+    // std::cout << featureToString(features, 0, 1);
     return features;
 }
 
@@ -1019,7 +1050,7 @@ std::vector<float> GoEnvLoader::getPositive(int pos, utils::Rotation rotation) c
     return bitboardToFeature(env.getStoneBitboard(), env.getTurn(), rotation, false);
 }
 
-std::vector<float> GoEnvLoader::getNegative(int pos, utils::Rotation rotation, int index /* = -1*/) const
+std::vector<float> GoEnvLoader::getNegative(int pos, utils::Rotation rotation /*= utils::Rotation::kRotationNone*/, int index /* = -1*/) const
 {
     if (config::siamese_sampling_strategy == "random_move_piece" || "filter_by_value") {
         GoEnv env;
@@ -1032,13 +1063,50 @@ std::vector<float> GoEnvLoader::getNegative(int pos, utils::Rotation rotation, i
             return {};
         }
         return bitboardToFeature(neg_bitboards[0], env.getTurn(), rotation, false);
+    } else if (config::siamese_sampling_strategy == "move_by_policy") {
+        int num_negatives = std::stoi(getActionPairs()[pos].second["N"]);
+        int negative_id = (num_negatives == 0 ? 0 : Random::randInt() % std::stoi(getActionPairs()[pos].second["N"]));
+        GoEnv env;
+        for (const auto& a : getNegativeActionHistory(pos, negative_id)) { env.act(a); }
+        return env.getSiameseFeatures(rotation);
     } else {
         return {};
     }
 }
 
+std::vector<GoAction> GoEnvLoader::getNegativeActionHistory(int pos, int negative_id) const
+{
+    int id = negative_id;
+    bool follow_true_board = false;
+    env::Player turn = getActionPairs()[pos].first.getPlayer();
+    std::deque<std::string> actions_str;
+    for (int i = pos; i >= 0; --i) {
+        if (getActionPairs()[i].first.getPlayer() == turn && std::stoi(getActionPairs()[i].second["N"]) == 0) { follow_true_board = true; }
+        if (getActionPairs()[i].first.getPlayer() == turn && !follow_true_board) {
+            const std::string& action_str = getActionPairs()[i].second["A"];
+            std::vector<std::string> negatives_str = utils::stringToVector(action_str, ";", false);
+            int index = 0;
+            for (size_t j = 0; j < negatives_str.size(); ++j) {
+                if (index + static_cast<int>(negatives_str[j].size()) / 2 > id) {
+                    actions_str.push_front(negatives_str[j].substr(2 * (id - index), 2));
+                    id = j;
+                    break;
+                }
+                index += static_cast<int>(negatives_str[j].size()) / 2;
+            }
+        } else {
+            actions_str.push_front(utils::SGFLoader::actionIDToSGFString(getActionPairs()[i].first.getActionID(), getBoardSize()));
+        }
+    }
+    std::vector<GoAction> actions;
+    for (int i = 0; i <= pos; ++i) { actions.push_back(GoAction(utils::SGFLoader::sgfStringToActionID(actions_str[i], getBoardSize()), getActionPairs()[i].first.getPlayer())); }
+
+    return actions;
+}
+
 std::vector<env::GamePair<env::go::GoBitboard>> GoEnvLoader::generateNegativeBitboards(const GoEnv& env, int index, bool save_all /* = false*/) const
 {
+    // We now skip checking legality by GoEnv after moving stone (because it is only 0.032%)
     std::vector<env::GamePair<env::go::GoBitboard>> outputs;
     env::GamePair<env::go::GoBitboard> stone_bitboard = env.getStoneBitboard();
     Player opponent = env::getNextPlayer(env.getTurn(), 2);

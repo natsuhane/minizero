@@ -213,24 +213,29 @@ bool DataLoaderThread::sampleData()
 
 void DataLoaderThread::setIIGTrainingData(int batch_index)
 {
-    // random pickup one position
-    std::pair<int, int> p = getSharedData()->replay_buffer_.sampleEnvAndPos();
-    int env_id = p.first, pos = p.second;
+    while (true) {
+        // random pickup one position
+        std::pair<int, int> p = getSharedData()->replay_buffer_.sampleEnvAndPos();
+        int env_id = p.first, pos = p.second;
 
-    // IIG training data
-    const EnvironmentLoader& env_loader = getSharedData()->replay_buffer_.env_loaders_[env_id];
-    Rotation rotation = static_cast<Rotation>(Random::randInt() % static_cast<int>(Rotation::kRotateSize));
-    std::vector<float> anchor = env_loader.getAnchor(pos, rotation);
-    std::vector<float> positive = env_loader.getPositive(pos, rotation);
+        // IIG training data
+        const EnvironmentLoader& env_loader = getSharedData()->replay_buffer_.env_loaders_[env_id];
+        if (std::stoi(env_loader.getActionPairs()[pos].second["N"]) == 0) { continue; } // if info set is empty, resample another position
+        Rotation rotation = static_cast<Rotation>(Random::randInt() % static_cast<int>(Rotation::kRotateSize));
+        std::vector<float> anchor = env_loader.getAnchor(pos, rotation);
+        std::vector<float> positive = env_loader.getPositive(pos, rotation);
 
-    std::vector<float> negative = env_loader.getNegative(pos, rotation);
+        std::vector<float> negative = env_loader.getNegative(pos, rotation);
 
-    // write data to data_ptr
-    std::copy(anchor.begin(), anchor.end(), getSharedData()->getDataPtr()->anchor_ + anchor.size() * batch_index);
-    std::copy(positive.begin(), positive.end(), getSharedData()->getDataPtr()->positive_ + positive.size() * batch_index);
-    std::copy(negative.begin(), negative.end(), getSharedData()->getDataPtr()->negative_ + negative.size() * batch_index);
-    getSharedData()->getDataPtr()->sampled_index_[2 * batch_index] = env_id;
-    getSharedData()->getDataPtr()->sampled_index_[2 * batch_index + 1] = pos;
+        // write data to data_ptr
+        std::copy(anchor.begin(), anchor.end(), getSharedData()->getDataPtr()->anchor_ + anchor.size() * batch_index);
+        std::copy(positive.begin(), positive.end(), getSharedData()->getDataPtr()->positive_ + positive.size() * batch_index);
+        std::copy(negative.begin(), negative.end(), getSharedData()->getDataPtr()->negative_ + negative.size() * batch_index);
+        getSharedData()->getDataPtr()->sampled_index_[2 * batch_index] = env_id;
+        getSharedData()->getDataPtr()->sampled_index_[2 * batch_index + 1] = pos;
+
+        break;
+    }
 }
 
 void DataLoaderThread::setIIGTestingData(int batch_index, int env_id, int pos)

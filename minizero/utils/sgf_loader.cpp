@@ -112,7 +112,7 @@ std::string SGFLoader::actionIDToBoardCoordinateString(int action_id, int board_
 
 int SGFLoader::sgfStringToActionID(const std::string& sgf_string, int board_size)
 {
-    if (sgf_string.size() != 2) { return board_size * board_size; }
+    if (sgf_string.size() != 2 || sgf_string == "tt") { return board_size * board_size; }
     int x = std::toupper(sgf_string[0]) - 'A';
     int y = (board_size - 1) - (std::toupper(sgf_string[1]) - 'A');
     return y * board_size + x;
@@ -122,7 +122,7 @@ std::string SGFLoader::actionIDToSGFString(int action_id, int board_size)
 {
     assert(action_id >= 0 && action_id <= board_size * board_size);
 
-    if (action_id == board_size * board_size) { return ""; }
+    if (action_id == board_size * board_size) { return "tt"; }
     int x = action_id % board_size;
     int y = action_id / board_size;
     std::ostringstream oss;
