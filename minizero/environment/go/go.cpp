@@ -339,7 +339,6 @@ std::vector<float> GoEnv::getSiameseFeatures(utils::Rotation rotation /*= utils:
             }
         }
     }
-    // std::cout << featureToString(features, 0, 1);
     return features;
 }
 
@@ -1044,7 +1043,7 @@ std::vector<float> GoEnvLoader::getAnchor(int target_pos, utils::Rotation rotati
     return anchor; // H * C * N * N floats
 }
 
-std::vector<float> GoEnvLoader::getPositive(int pos, utils::Rotation rotation) const
+std::vector<float> GoEnvLoader::getPositive(int pos, utils::Rotation rotation /*= utils::Rotation::kRotationNone*/) const
 {
     GoEnv env = rebuildToStep(pos);
     return bitboardToFeature(env.getStoneBitboard(), env.getTurn(), rotation, false);
@@ -1052,7 +1051,7 @@ std::vector<float> GoEnvLoader::getPositive(int pos, utils::Rotation rotation) c
 
 std::vector<float> GoEnvLoader::getNegative(int pos, utils::Rotation rotation /*= utils::Rotation::kRotationNone*/, int index /* = -1*/) const
 {
-    if (config::siamese_sampling_strategy == "random_move_piece" || "filter_by_value") {
+    if (config::siamese_sampling_strategy == "random_move_piece" || config::siamese_sampling_strategy == "filter_by_value") {
         GoEnv env;
         const auto& action_pairs = getActionPairs();
         for (int i = 0; i < pos; ++i) { env.act(action_pairs[i].first); }

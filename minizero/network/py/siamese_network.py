@@ -87,21 +87,6 @@ class PhantomGoSiamese(nn.Module):
         x = F.normalize(x, p=2.0, dim=1)
         return x
 
-    def forward(self, anchor, positive, negative):
-        """
-        Forward pass for training
-        Args:
-            anchor: (B, H*6, N, N)
-            positive: (B, 4, N, N)
-            negative: (B, 4, N, N)
-        Returns:
-            Tuple of (anchor_emb, positive_emb, negative_emb)
-        """
-        anchor_emb = self.encode_anchor(anchor)
-        positive_emb = self.encode_board(positive)
-        negative_emb = self.encode_board(negative)
-        return anchor_emb, positive_emb, negative_emb
-
     @torch.no_grad()
     def compute_distances(self, anchor: torch.Tensor, boards: torch.Tensor) -> torch.Tensor:
         """
@@ -144,14 +129,24 @@ class SiameseNetwork(nn.Module):
                  input_channel_height,
                  input_channel_width,
                  num_hidden_channels,
-                 num_blocks):
+                 hidden_channel_height,
+                 hidden_channel_width,
+                 num_blocks,
+                 action_size,
+                 num_value_hidden_channels,
+                 discrete_value_size):
         super(SiameseNetwork, self).__init__()
         self.game_name = game_name
         self.num_input_channels = num_input_channels
         self.input_channel_height = input_channel_height
         self.input_channel_width = input_channel_width
         self.num_hidden_channels = num_hidden_channels
+        self.hidden_channel_height = hidden_channel_height
+        self.hidden_channel_width = hidden_channel_width
         self.num_blocks = num_blocks
+        self.action_size = action_size
+        self.num_value_hidden_channels = num_value_hidden_channels
+        self.discrete_value_size = discrete_value_size
 
         self.network = PhantomGoSiamese(
             obs_in_channels=num_input_channels,
@@ -184,8 +179,32 @@ class SiameseNetwork(nn.Module):
         return self.num_hidden_channels
 
     @torch.jit.export
+    def get_hidden_channel_height(self):
+        return self.hidden_channel_height
+
+    @torch.jit.export
+    def get_hidden_channel_width(self):
+        return self.hidden_channel_width
+
+    @torch.jit.export
     def get_num_blocks(self):
         return self.num_blocks
 
-    def forward(self, anchor, positive, negative):
-        return self.network(anchor, positive, negative)
+    @torch.jit.export
+    def get_action_size(self):
+        return self.action_size
+
+    @torch.jit.export
+    def get_num_value_hidden_channels(self):
+        return self.num_value_hidden_channels
+
+    @torch.jit.export
+    def get_discrete_value_size(self):
+        return self.discrete_value_size
+
+    def forward(self, inputs):
+        if inputs.size(1) > 4:  # TODO: hard code now
+            embeddings = self.network.encode_anchor(inputs)
+        else:
+            embeddings = self.network.encode_board(inputs)
+        return {"embeddings": embeddings}

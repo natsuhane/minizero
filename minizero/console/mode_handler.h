@@ -51,6 +51,7 @@ protected:
     virtual void runRecoverObs();
     void runDataSet();
     void runVisualizeSgf();
+    void runEvaluator();
 
     std::map<std::string, std::shared_ptr<BaseFunction>> function_map_;
 };

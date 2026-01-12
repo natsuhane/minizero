@@ -156,7 +156,10 @@ def train(model, training_dir, data_loader, start_iter, end_iter):
 
         if model.network_type == "siamese":
             # Siamese Network: Triplet Loss
-            anchor_emb, positive_emb, negative_emb = model.network(anchor, positive, negative)
+            # anchor_emb, positive_emb, negative_emb = model.network(anchor, positive, negative)
+            anchor_emb = model.network(anchor)["embeddings"]
+            positive_emb = model.network(positive)["embeddings"]
+            negative_emb = model.network(negative)["embeddings"]
             loss = model.loss_fn(anchor_emb, positive_emb, negative_emb)
         elif model.network_type == "binary_cnn":
             # Binary CNN: BCE Loss

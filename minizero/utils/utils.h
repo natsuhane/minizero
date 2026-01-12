@@ -117,6 +117,14 @@ float stddev(const std::vector<T>& input)
     return std::sqrt(variance / (input.size() - 1));
 }
 
+inline float distance(const std::vector<float>& emb1, const std::vector<float>& emb2)
+{
+    assert(emb1.size() == emb2.size());
+    float sum = 0.0f;
+    for (size_t i = 0; i < emb1.size(); ++i) { sum += std::pow(emb1[i] - emb2[i], 2.0f); }
+    return std::sqrt(sum);
+}
+
 inline std::vector<float> softmin(const std::vector<float>& distances, float temperature = 10.0f)
 {
     if (distances.empty()) { return {}; }

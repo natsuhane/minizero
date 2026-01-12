@@ -3,6 +3,7 @@
 #include "alphazero_network.h"
 #include "console.h"
 #include "create_network.h"
+#include "evaluator.h"
 #include "git_info.h"
 #include "iig_data_generator.h"
 #include "obs_recover.h"
@@ -10,6 +11,7 @@
 #include "ostream_redirector.h"
 #include "random.h"
 #include "sgf_loader.h"
+#include "siamese_network.h"
 #include "time_system.h"
 #include "utils.h"
 #include "zero_server.h"
@@ -34,6 +36,7 @@ ModeHandler::ModeHandler()
     RegisterFunction("recover_obs", this, &ModeHandler::runRecoverObs);
     RegisterFunction("run", this, &ModeHandler::runDataSet);
     RegisterFunction("visualize_sgf", this, &ModeHandler::runVisualizeSgf);
+    RegisterFunction("evaluator", this, &ModeHandler::runEvaluator);
 }
 
 void ModeHandler::run(int argc, char* argv[])
@@ -296,6 +299,12 @@ void ModeHandler::runVisualizeSgf()
     }
     fout << "</body></html>";
     fout.close();
+}
+
+void ModeHandler::runEvaluator()
+{
+    iig_data_generator::Evaluator evaluator;
+    evaluator.run();
 }
 
 } // namespace minizero::console
