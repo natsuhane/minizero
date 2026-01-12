@@ -21,3 +21,6 @@ sgf/
 # others
 .vscode
 .container_root
+*.png
+*.csv
+*.html

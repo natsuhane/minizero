@@ -10,8 +10,9 @@
 ### Visualize training data
 Visualize one positive and all negative boards by given specific game id and step (display each board and its value on website)
 * Use [WGo.js tool](https://wgo.waltheri.net/)
+* Output standard sgf format -> `visualizer/index.html` -> WGo tool
 * `./build/go/minizero_go -mode visualize_sgf -conf_file go.cfg`
-  * `siamese_visualizer_input_sgf` for pre-generated filter_by_value dataset
+  * `siamese_visualizer_input_sgf` for pre-generated training dataset
   * `siamese_game_id` for tag I[...]
   * `siamese_game_step`
 * `./visualizer/run_web.sh`

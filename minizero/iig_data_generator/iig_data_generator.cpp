@@ -79,7 +79,6 @@ void SlaveThread::genNegativeByPolicy(EnvironmentLoader& env_loader)
         for (auto& env_with_actions : info_set_envs.get(turn)) {
             if (!env_with_actions.env.isLegalAction(action)) { env_with_actions.is_valid = false; }
             env_with_actions.env.act(action);
-            // TODO: feature rotation? (maple)
             features.push_back(env_with_actions.env.getFeatures());
         }
         auto results = getSharedData()->gpuForward(id_ % getSharedData()->networks_.size(), features);

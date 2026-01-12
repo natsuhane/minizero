@@ -320,7 +320,6 @@ std::vector<float> GoEnv::getSiameseFeatures(utils::Rotation rotation /*= utils:
             2. black turn
             3. white turn
     */
-    // TODO: check if the following is correct (maple) vvv
     std::vector<float> features;
     for (int channel = 0; channel < 4; ++channel) {
         for (int pos = 0; pos < board_size_ * board_size_; ++pos) {
@@ -1056,7 +1055,7 @@ std::vector<float> GoEnvLoader::getNegative(int pos, utils::Rotation rotation /*
         const auto& action_pairs = getActionPairs();
         for (int i = 0; i < pos; ++i) { env.act(action_pairs[i].first); }
 
-        // TODO: neg_bitboards can be empty? how to handle? (maple) low
+        // TODO: neg_bitboards can be empty? how to handle?
         auto neg_bitboards = generateNegativeBitboards(env, (index > 0 ? index : (utils::Random::randInt() % config::siamese_max_num_negatives)), false);
         if (neg_bitboards.empty()) {
             return {};

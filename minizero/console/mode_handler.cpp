@@ -236,6 +236,26 @@ void ModeHandler::runVisualizeSgf()
         break;
     }
 
+    std::vector<float> dis;
+    {
+        // calculate distance between anchor and postive/negative
+        std::shared_ptr<SiameseNetwork> si_network = std::static_pointer_cast<SiameseNetwork>(createNetwork("go_9x9_siamese_1bx256_k5000-7b5d23-dirty/model/weight_iter_100.pt", 0));
+        si_network->pushBackBoard(env_loader.getPositive(config::siamese_game_step - 1, utils::Rotation::kRotationNone));
+        int num_negatives = std::stoi(env_loader.getActionPairs()[config::siamese_game_step - 1].second["N"]);
+        for (int neg_id = 0; neg_id < num_negatives; ++neg_id) {
+            std::vector<float> negative = env_loader.getNegative(config::siamese_game_step - 1, utils::Rotation::kRotationNone, neg_id);
+            si_network->pushBackBoard(negative);
+        }
+        auto embs = si_network->forward();
+        si_network->pushBackAnchor(env_loader.getAnchor(config::siamese_game_step - 1, utils::Rotation::kRotationNone));
+        auto anchor_emb = si_network->forward();
+        for (auto& e : embs) {
+            auto a = std::static_pointer_cast<SiameseNetworkOutput>(e);
+            auto b = std::static_pointer_cast<SiameseNetworkOutput>(anchor_emb[0]);
+            dis.push_back(utils::distance(a->embeddings_, b->embeddings_));
+        }
+    }
+
     // positive sgf
     Environment env;
     std::string positive_sgf;
@@ -257,25 +277,23 @@ void ModeHandler::runVisualizeSgf()
     sgf_outputs.push_back(sgf_prefix + positive_sgf + sgf_suffix);
 
     // negative sgfs
-    std::vector<std::string> ids_str_01 = utils::stringToVector(env_loader.getActionPairs()[target_game_step - 1].second["N1"], ",");
-    std::vector<std::string> ids_str_02 = utils::stringToVector(env_loader.getActionPairs()[target_game_step - 1].second["N2"], ",");
-    ids_str_01.insert(ids_str_01.end(), ids_str_02.begin(), ids_str_02.end());
-    auto neg_bitboards = env_loader.generateNegativeBitboards(env, config::siamese_max_random_perturbations, true);
-    for (const auto& id_str : ids_str_01) {
-        int id = std::stoi(id_str);
+    // for new dataset (use perfect policy for opponent)
+    std::cerr << env_loader.getActionPairs()[target_game_step - 1].second["N"] << std::endl;
+    int num_negatives = std::stoi(env_loader.getActionPairs()[target_game_step - 1].second["N"]);
+    for (int i = 0; i < num_negatives; ++i) {
+        Environment neg_env;
+        auto action_history = env_loader.getNegativeActionHistory(target_game_step - 1, i);
         std::string negative_sgf;
-        std::vector<env::Player> players = {env::Player::kPlayer1, env::Player::kPlayer2};
-        for (const auto& player : players) {
-            env::go::GoBitboard bitboard = neg_bitboards[id].get(player);
-            if (bitboard.none()) { continue; }
-            negative_sgf += "A" + std::string(1, env::playerToChar(player));
-            while (!bitboard.none()) {
-                int p = bitboard._Find_first();
-                bitboard.reset(p);
-                negative_sgf += "[" + utils::SGFLoader::actionIDToSGFString(p, env_loader.getBoardSize()) + "]";
-            }
+        for (auto& action : action_history) {
+            neg_env.act(action);
+            negative_sgf += ";" +
+                            std::string(1, env::playerToChar(action.getPlayer())) +
+                            "[" +
+                            utils::SGFLoader::actionIDToSGFString(action.getActionID(), env_loader.getBoardSize()) +
+                            "]";
         }
-        az_network->pushBack(env_loader.bitboardToFeature(neg_bitboards[id], env.getTurn(), utils::Rotation::kRotationNone, true));
+
+        az_network->pushBack(neg_env.getFeatures());
         sgf_outputs.push_back(sgf_prefix + negative_sgf + sgf_suffix);
     }
 
@@ -294,6 +312,7 @@ void ModeHandler::runVisualizeSgf()
                  << std::fixed << std::setprecision(3)
                  << std::static_pointer_cast<AlphaZeroNetworkOutput>(network_output[j])->value_
                  << "(" << std::static_pointer_cast<AlphaZeroNetworkOutput>(network_output[j])->value_ - postive_value << ")"
+                 << " (" << dis[i] << ")"
                  << "</div>" << std::endl;
         }
     }
