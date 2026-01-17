@@ -38,7 +38,6 @@ class MinizeroDataLoader:
         self.data_list = []
 
         # allocate memory
-
         self.anchor_channels = 72
         self.board_channels = 4  # black piece, white piece, black's turn?, white's turn?
 

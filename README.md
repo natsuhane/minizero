@@ -4,8 +4,17 @@
 ### Generate from Go model self-play
 * `./build/go/minizero_go -mode run -conf_file go.cfg`
   * siamese_generator_input_sgf = sp data (.sgf)
+    * Need to add tag I for game ID first
   * nn_file_name = Go model weight
-* Output: Add selected negative boards' ID to sgf (tag "N")
+  * siamese_sampling_strategy
+    * filter_by_value: Add selected negative boards' ID to sgf (tag N)
+    * move_by_policy: Add selected action to tag A, add number of negatives to tag N
+
+### Debug & statistic tools
+* siamese_generator_statistic
+  * Output statistic data to statistic/
+  * `python3 ./tools/plot_statistics.py `
+* siamese_generator_verification
 
 ### Visualize training data
 Visualize one positive and all negative boards by given specific game id and step (display each board and its value on website)

@@ -40,7 +40,7 @@ void EvaluatorThread::runJob()
     while (true) {
         size_t game_index = getSharedData()->getAvailableGameIndex();
         if (game_index >= getSharedData()->sgfs_.size()) {
-            is_done = true;
+            is_done_ = true;
             return;
         }
         // print progress

@@ -1063,7 +1063,9 @@ std::vector<float> GoEnvLoader::getNegative(int pos, utils::Rotation rotation /*
         return bitboardToFeature(neg_bitboards[0], env.getTurn(), rotation, false);
     } else if (config::siamese_sampling_strategy == "move_by_policy") {
         int num_negatives = std::stoi(getActionPairs()[pos].second["N"]);
-        int negative_id = (num_negatives == 0 ? 0 : Random::randInt() % std::stoi(getActionPairs()[pos].second["N"]));
+        int negative_id = (num_negatives == 0
+                               ? 0
+                               : (index == -1 ? Random::randInt() % std::stoi(getActionPairs()[pos].second["N"]) : index));
         GoEnv env;
         for (const auto& a : getNegativeActionHistory(pos, negative_id)) { env.act(a); }
         return env.getSiameseFeatures(rotation);

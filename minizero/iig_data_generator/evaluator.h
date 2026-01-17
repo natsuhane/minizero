@@ -28,12 +28,12 @@ public:
     EvaluatorThread(int id, std::shared_ptr<utils::BaseSharedData> shared_data)
         : BaseSlaveThread(id, shared_data) {}
 
-    void initialize() override { is_done = false; }
+    void initialize() override { is_done_ = false; }
     void runJob() override;
-    bool isDone() override { return is_done; }
+    bool isDone() override { return is_done_; }
 
 private:
-    bool is_done;
+    bool is_done_;
 
     void evaluateOneGame(const std::string& sgf);
     inline std::shared_ptr<EvaluatorSharedData> getSharedData() { return std::static_pointer_cast<EvaluatorSharedData>(shared_data_); }

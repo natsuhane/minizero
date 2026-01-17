@@ -84,6 +84,8 @@ bool siamese_debug_output = false;
 int siamese_max_move_distance = 0;
 float siamese_value_threshold = 0.1f;
 int siamese_max_num_negatives = 1000;
+bool siamese_generator_statistic = false;
+bool siamese_generator_verification = false;
 std::string siamese_generator_input_sgf = "";
 std::string siamese_generator_output_sgf = "";
 float siamese_generator_policy_threshold = 0.1f;
@@ -190,6 +192,8 @@ void setConfiguration(ConfigureLoader& cl)
     cl.addParameter("siamese_max_move_distance", siamese_max_move_distance, "the maximum Manhattan distance for moving stones", "Siamese");
     cl.addParameter("siamese_value_threshold", siamese_value_threshold, "the threshold to filter possible negative boards by value", "Siamese");
     cl.addParameter("siamese_max_num_negatives", siamese_max_num_negatives, "the max number of generating negative samples (selecting stones to move/move by policy)", "Siamese");
+    cl.addParameter("siamese_generator_statistic", siamese_generator_statistic, "true for output statistics info during generating negative boards", "Siamese");
+    cl.addParameter("siamese_generator_verification", siamese_generator_verification, "true for verifying the generated negative boards", "Siamese");
     cl.addParameter("siamese_generator_input_sgf", siamese_generator_input_sgf, "for generate dataset, the input sgf file name (minizero sp data)", "Siamese");
     cl.addParameter("siamese_generator_output_sgf", siamese_generator_output_sgf, "the output sgf file name for generator", "Siamese");
     cl.addParameter("siamese_generator_policy_threshold", siamese_generator_policy_threshold, "actions with policy probability below this value will be pruned", "Siamese");

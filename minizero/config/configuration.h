@@ -86,6 +86,8 @@ extern bool siamese_debug_output;
 extern int siamese_max_move_distance;
 extern float siamese_value_threshold;
 extern int siamese_max_num_negatives;
+extern bool siamese_generator_verification;
+extern bool siamese_generator_statistic;
 extern std::string siamese_generator_input_sgf;
 extern std::string siamese_generator_output_sgf;
 extern float siamese_generator_policy_threshold;
