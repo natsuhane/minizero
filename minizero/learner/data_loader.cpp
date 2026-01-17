@@ -175,13 +175,7 @@ bool DataLoaderThread::addEnvironmentLoader()
     if (env_string.empty()) { return false; }
 
     EnvironmentLoader env_loader;
-    if (env_loader.loadFromString(env_string)) {
-        if (config::siamese_mode == "training") {
-            getSharedData()->replay_buffer_.addData(env_loader);
-        } else {
-            getSharedData()->replay_buffer_.addTestingData(env_loader);
-        }
-    }
+    if (env_loader.loadFromString(env_string)) { getSharedData()->replay_buffer_.addData(env_loader); }
     return true;
 }
 
@@ -191,15 +185,7 @@ bool DataLoaderThread::sampleData()
     if (batch_index >= config::learner_batch_size) { return false; }
 
     if (config::siamese_nn_type_name == "siamese" || config::siamese_nn_type_name == "binary_cnn") {
-        if (config::siamese_mode == "training") {
-            setIIGTrainingData(batch_index);
-        } else if (config::siamese_mode == "testing") {
-            std::pair<int, int> p = getSharedData()->getNextEnvPosIndex();
-            if (p.first < 0 || p.second < 0) { return false; }
-            setIIGTestingData(batch_index, p.first, p.second);
-        } else {
-            return false;
-        }
+        setIIGTrainingData(batch_index);
     } else if (config::nn_type_name == "alphazero") {
         setAlphaZeroTrainingData(batch_index);
     } else if (config::nn_type_name == "muzero") {
@@ -236,24 +222,6 @@ void DataLoaderThread::setIIGTrainingData(int batch_index)
 
         break;
     }
-}
-
-void DataLoaderThread::setIIGTestingData(int batch_index, int env_id, int pos)
-{
-    // get next position
-    const EnvironmentLoader& env_loader = getSharedData()->replay_buffer_.env_loaders_[env_id];
-    Rotation rotation = static_cast<Rotation>(Random::randInt() % static_cast<int>(Rotation::kRotateSize));
-    std::vector<float> anchor = env_loader.getAnchor(pos, rotation);
-    std::vector<float> positive = env_loader.getPositive(pos, rotation);
-
-    std::vector<float> negative = env_loader.getNegative(pos, rotation);
-
-    // write data to data_ptr
-    std::copy(anchor.begin(), anchor.end(), getSharedData()->getDataPtr()->anchor_ + anchor.size() * batch_index);
-    std::copy(positive.begin(), positive.end(), getSharedData()->getDataPtr()->positive_ + positive.size() * batch_index);
-    std::copy(negative.begin(), negative.end(), getSharedData()->getDataPtr()->negative_ + negative.size() * batch_index);
-    getSharedData()->getDataPtr()->sampled_index_[2 * batch_index] = env_id;
-    getSharedData()->getDataPtr()->sampled_index_[2 * batch_index + 1] = pos;
 }
 
 void DataLoaderThread::setAlphaZeroTrainingData(int batch_index)

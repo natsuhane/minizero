@@ -84,7 +84,6 @@ protected:
     virtual bool sampleData();
 
     virtual void setIIGTrainingData(int batch_index);
-    virtual void setIIGTestingData(int batch_index, int env_id, int pos);
     virtual void setAlphaZeroTrainingData(int batch_index);
     virtual void setMuZeroTrainingData(int batch_index);
 

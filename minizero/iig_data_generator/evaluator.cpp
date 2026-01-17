@@ -86,18 +86,18 @@ void EvaluatorThread::evaluateOneGame(const std::string& sgf)
         for (int neg_id = 0; neg_id < num_negatives; ++neg_id) {
             auto neg_emb = std::static_pointer_cast<SiameseNetworkOutput>(negative_res[neg_id]);
             float dis = utils::distance(neg_emb->embeddings_, anchor_emb->embeddings_);
-            if (dis < pos_distace) { ++rank; }
+            if (dis <= pos_distace) { ++rank; }
             min = std::min(min, dis);
             max = std::max(max, dis);
             sum += dis;
         }
-        std::cerr << "pos = " << pos
-                  << ", # negs = " << num_negatives
-                  << ",\trank = " << rank
-                  << ", pos_dis = " << pos_distace
-                  << ", min = " << min
-                  << ", max = " << max
-                  << ", avg = " << sum / num_negatives << std::endl;
+        std::cerr << "pos = " << std::setw(4) << pos
+                  << ", # negs = " << std::setw(4) << num_negatives
+                  << ", rank = " << std::setw(4) << rank
+                  << ", pos_dis = " << std::setw(8) << pos_distace
+                  << ", min = " << std::setw(8) << min
+                  << ", max = " << std::setw(8) << max
+                  << ", avg = " << std::setw(8) << sum / num_negatives << std::endl;
     }
 }
 

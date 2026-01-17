@@ -60,7 +60,6 @@ PYBIND11_MODULE(minizero_py, m)
     m.def("get_nn_discrete_value_size", []() { return kEnvInstance->getDiscreteValueSize(); });
     m.def("get_nn_type_name", []() { return config::nn_type_name; });
     m.def("get_nn_snapshot_interval", []() { return config::nn_snapshot_interval; });
-    m.def("get_siamese_mode", []() { return config::siamese_mode; });
     m.def("get_siamese_nn_type_name", []() { return config::siamese_nn_type_name; });
     m.def("get_siamese_eval_num_negatives", []() { return config::siamese_eval_num_negatives; });
 
