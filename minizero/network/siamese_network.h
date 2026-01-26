@@ -1,5 +1,6 @@
 #pragma once
 
+#include "configuration.h"
 #include "network.h"
 #include "utils.h"
 #include <algorithm>
@@ -58,7 +59,7 @@ public:
 
     int pushBackBoard(std::vector<float> features)
     {
-        const int num_board_input_channels = 4;
+        const int num_board_input_channels = config::siamese_nn_feature_channels;
         assert(static_cast<int>(features.size()) == num_board_input_channels * getInputChannelHeight() * getInputChannelWidth());
         assert(batch_size_ < kReserved_batch_size);
 
@@ -78,9 +79,9 @@ public:
         auto forward_result = network_.forward(std::vector<torch::jit::IValue>{torch::cat(tensor_input_).to(getDevice())}).toGenericDict();
 
         auto embedding_output = forward_result.at("embeddings").toTensor().to(at::kCPU);
-        assert(embedding_output.numel() == batch_size_ * 512);
+        const int embedding_size = config::siamese_nn_embedding_size;
+        assert(embedding_output.numel() == batch_size_ * embedding_size);
 
-        const int embedding_size = 512;
         std::vector<std::shared_ptr<NetworkOutput>> network_outputs;
         for (int i = 0; i < batch_size_; ++i) {
             network_outputs.emplace_back(std::make_shared<SiameseNetworkOutput>(embedding_size));

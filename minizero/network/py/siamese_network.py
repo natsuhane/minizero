@@ -4,138 +4,40 @@ import torch.nn.functional as F
 from .network_unit import ResidualBlock, PolicyNetwork, ValueNetwork, DiscreteValueNetwork
 
 
-def conv_block(in_ch, out_ch, k=3, s=1, p=1):
-    return nn.Sequential(
-        nn.Conv2d(in_ch, out_ch, kernel_size=k, stride=s, padding=p, bias=False),
-        nn.BatchNorm2d(out_ch),
-        nn.ReLU(inplace=True),
-    )
-
-
-class PhantomGoSiamese(nn.Module):
-    """
-    Siamese network for Phantom Go with two encoders:
-    - anchor_encoder: encodes observation history (H*6 x N x N)
-    - board_encoder: encodes board state (4 x N x N) - black, white, black's turn, white's turn
-    Both produce L2-normalized embeddings in a shared space.
-    """
-
-    def __init__(self, obs_in_channels: int, board_in_channels: int = 4, embed_dim: int = 512):
+class ResidualBlockInstanceNorm(nn.Module):
+    def __init__(self, channels):
         super().__init__()
-        self.obs_in_channels = obs_in_channels
-        self.board_in_channels = board_in_channels
-        self.embed_dim = embed_dim
+        self.conv = nn.Conv2d(channels, channels, kernel_size=3, padding=1, bias=False)
+        self.norm = nn.InstanceNorm2d(channels)
+        self.activation = nn.ELU(inplace=True)
 
-        # Anchor encoder
-        self.anchor_feat = nn.Sequential(
-            conv_block(obs_in_channels, 64),
-            conv_block(64, 64),
-            conv_block(64, 128, s=2),     # downsample
-            conv_block(128, 128),
-            conv_block(128, 256, s=2),    # downsample
-            conv_block(256, 256),
-            conv_block(256, 256),
-        )
-        self.anchor_head = nn.Sequential(
-            nn.Conv2d(256, 256, kernel_size=1, bias=False),
-            nn.ELU(inplace=True),
-            nn.AdaptiveAvgPool2d(1),  # Global Average Pooling
-            nn.Flatten(),
-            nn.Linear(256, embed_dim, bias=False),
-        )
+    def forward(self, x):
+        return x + self.activation(self.norm(self.conv(x)))
 
-        # Board encoder
-        self.board_feat = nn.Sequential(
-            conv_block(board_in_channels, 64),
-            conv_block(64, 64),
-            conv_block(64, 128, s=2),
-            conv_block(128, 128),
-            conv_block(128, 256, s=2),
-            conv_block(256, 256),
-        )
-        self.board_head = nn.Sequential(
-            nn.Conv2d(256, 256, kernel_size=1, bias=False),
-            nn.ELU(inplace=True),
-            nn.AdaptiveAvgPool2d(1),
-            nn.Flatten(),
-            nn.Linear(256, embed_dim, bias=False),
-        )
 
-    def encode_anchor(self, anchor: torch.Tensor) -> torch.Tensor:
-        """
-        Encode observation history
-        Args:
-            anchor: (B, H*6, N, N)
-        Returns:
-            (B, D) L2-normalized embeddings
-        """
-        x = self.anchor_feat(anchor)
-        x = self.anchor_head(x)
-        x = F.normalize(x, p=2.0, dim=1)
+class EmbeddingNetwork(nn.Module):
+    def __init__(self, in_channels, out_channels=128, hidden_channels=64, num_layers=5):
+        super().__init__()
+        self.input_conv = nn.Conv2d(in_channels, hidden_channels, kernel_size=3, padding=1, bias=False)
+        self.hidden = nn.ModuleList([
+            nn.Conv2d(hidden_channels, hidden_channels, kernel_size=3, padding=1, bias=False)
+            for _ in range(num_layers)
+        ])
+        self.output_conv = nn.Conv2d(hidden_channels, out_channels, kernel_size=3, padding=1, bias=False)
+
+    def forward(self, x):
+        x = F.elu(self.input_conv(x), inplace=True)
+        for layer in self.hidden:
+            x = F.elu(layer(x), inplace=True)
+        x = torch.tanh(self.output_conv(x))
         return x
-
-    def encode_board(self, board: torch.Tensor) -> torch.Tensor:
-        """
-        Encode board state
-        Args:
-            board: (B, 4, N, N) - black, white, black's turn, white's turn
-        Returns:
-            (B, D) L2-normalized embeddings
-        """
-        x = self.board_feat(board)
-        x = self.board_head(x)
-        x = F.normalize(x, p=2.0, dim=1)
-        return x
-
-    @torch.no_grad()
-    def compute_distances(self, anchor: torch.Tensor, boards: torch.Tensor) -> torch.Tensor:
-        """
-        Compute pairwise L2 distances between anchors and multiple boards
-        Args:
-            anchor: (B, H*6, N, N)
-            boards: (B, K, 4, N, N) - K candidate boards per anchor
-        Returns:
-            (B, K) distances
-        """
-        B, K = boards.shape[0], boards.shape[1]
-        anc_emb = self.encode_anchor(anchor)  # (B, D)
-
-        # Flatten and encode all boards
-        boards_flat = boards.view(B * K, *boards.shape[2:])
-        brd_emb = self.encode_board(boards_flat).view(B, K, -1)  # (B, K, D)
-
-        # Compute L2 distances
-        anc_exp = anc_emb.unsqueeze(1).expand_as(brd_emb)  # (B, K, D)
-        distances = torch.norm(anc_exp - brd_emb, dim=2)   # (B, K)
-        return distances
-
-    @staticmethod
-    def softmin_weights(distances: torch.Tensor, temperature: float = 10.0) -> torch.Tensor:
-        """
-        Convert distances to soft weights (closer = higher weight)
-        Args:
-            distances: (B, K)
-            temperature: scaling factor
-        Returns:
-            (B, K) weights that sum to 1
-        """
-        return torch.softmax(-distances / temperature, dim=1)
 
 
 class SiameseNetwork(nn.Module):
-    def __init__(self,
-                 game_name,
-                 num_input_channels,
-                 input_channel_height,
-                 input_channel_width,
-                 num_hidden_channels,
-                 hidden_channel_height,
-                 hidden_channel_width,
-                 num_blocks,
-                 action_size,
-                 num_value_hidden_channels,
-                 discrete_value_size):
-        super(SiameseNetwork, self).__init__()
+    def __init__(self, game_name, num_input_channels, input_channel_height, input_channel_width,
+                 num_hidden_channels, hidden_channel_height, hidden_channel_width,
+                 num_blocks, action_size, num_value_hidden_channels, discrete_value_size):
+        super().__init__()
         self.game_name = game_name
         self.num_input_channels = num_input_channels
         self.input_channel_height = input_channel_height
@@ -148,11 +50,50 @@ class SiameseNetwork(nn.Module):
         self.num_value_hidden_channels = num_value_hidden_channels
         self.discrete_value_size = discrete_value_size
 
-        self.network = PhantomGoSiamese(
-            obs_in_channels=num_input_channels,
-            board_in_channels=4,
-            embed_dim=512
+        pre_embed_dim = 128
+        embed_dim = 512
+        hidden_channels = 64
+        board_in_channels = 4
+
+        # Embedding networks (separate for anchor and board)
+        self.anchor_embed = EmbeddingNetwork(num_input_channels, pre_embed_dim, hidden_channels, num_layers=5)
+        self.board_embed = EmbeddingNetwork(board_in_channels, pre_embed_dim, hidden_channels, num_layers=5)
+
+        # Shared trunk (the TRUE Siamese part)
+        self.first_block = nn.Sequential(
+            nn.Conv2d(pre_embed_dim, pre_embed_dim, kernel_size=3, padding=1, bias=False),
+            nn.InstanceNorm2d(pre_embed_dim),
+            nn.ELU(inplace=True),
         )
+        self.residual_blocks = nn.ModuleList([
+            ResidualBlockInstanceNorm(pre_embed_dim) for _ in range(num_blocks)
+        ])
+        self.last_block = nn.Sequential(
+            nn.Conv2d(pre_embed_dim, 64, kernel_size=1, bias=False),
+            nn.InstanceNorm2d(64),
+            nn.ELU(inplace=True),
+            nn.Conv2d(64, 1, kernel_size=1, bias=False),
+            nn.InstanceNorm2d(1),
+            nn.ELU(inplace=True),
+        )
+        self.output = nn.Linear(input_channel_height * input_channel_width, embed_dim)
+
+    def _shared_trunk(self, x):
+        x = self.first_block(x)
+        for block in self.residual_blocks:
+            x = block(x)
+        x = self.last_block(x)
+        x = x.view(x.size(0), -1)
+        x = torch.tanh(self.output(x))
+        return x
+
+    def encode_anchor(self, anchor):
+        x = self.anchor_embed(anchor)
+        return self._shared_trunk(x)
+
+    def encode_board(self, board):
+        x = self.board_embed(board)
+        return self._shared_trunk(x)
 
     @torch.jit.export
     def get_type_name(self):
@@ -203,8 +144,8 @@ class SiameseNetwork(nn.Module):
         return self.discrete_value_size
 
     def forward(self, inputs):
-        if inputs.size(1) > 4:  # TODO: hard code now
-            embeddings = self.network.encode_anchor(inputs)
+        if inputs.size(1) > 4:
+            embeddings = self.encode_anchor(inputs)
         else:
-            embeddings = self.network.encode_board(inputs)
+            embeddings = self.encode_board(inputs)
         return {"embeddings": embeddings}

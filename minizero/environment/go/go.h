@@ -64,6 +64,7 @@ public:
     inline const GoBitboard& getBoardMaskBitboard() const { return board_mask_bitboard_; }
     inline const GoBitboard& getFreeAreaIDBitBoard() const { return free_area_id_bitboard_; }
     inline const GoBitboard& getFreeBlockIDBitBoard() const { return free_block_id_bitboard_; }
+    inline const GoBitboard& getCapturedStoneBitBoard() const { return captured_stone_bitboard_; }
     inline const GamePair<GoBitboard>& getStoneBitboard() const { return stone_bitboard_; }
     inline const GamePair<GoBitboard>& getBensonBitboard() const { return benson_bitboard_; }
     inline const GoGrid& getGrid(int id) const { return grids_[id]; }
@@ -118,9 +119,11 @@ protected:
     GoBitboard board_right_boundary_bitboard_;
     GoBitboard free_area_id_bitboard_;
     GoBitboard free_block_id_bitboard_;
+    GoBitboard captured_stone_bitboard_;
     GamePair<GoBitboard> stone_bitboard_;
     GamePair<GoBitboard> benson_bitboard_;
 
+    GamePair<std::vector<float>> num_captured_stones_;
     std::vector<GoGrid> grids_;
     std::vector<GoArea> areas_;
     std::vector<GoBlock> blocks_;

@@ -197,6 +197,26 @@ bool DataLoaderThread::sampleData()
     return true;
 }
 
+int getRandomFromFilteredIds(const std::string& filtered_ids)
+{
+    if (filtered_ids.empty()) { return -1; }
+    std::vector<int> ids;
+    std::stringstream ss(filtered_ids);
+    std::string segment;
+    while (std::getline(ss, segment, ',')) {
+        if (!segment.empty()) {
+            try {
+                ids.push_back(std::stoi(segment));
+            } catch (...) {
+                continue;
+            }
+        }
+    }
+    if (ids.empty()) { return -1; }
+    int random_index = minizero::utils::Random::randInt() % ids.size();
+    return ids[random_index];
+}
+
 void DataLoaderThread::setIIGTrainingData(int batch_index)
 {
     while (true) {
@@ -211,7 +231,10 @@ void DataLoaderThread::setIIGTrainingData(int batch_index)
         std::vector<float> anchor = env_loader.getAnchor(pos, rotation);
         std::vector<float> positive = env_loader.getPositive(pos, rotation);
 
-        std::vector<float> negative = env_loader.getNegative(pos, rotation);
+        std::vector<float> negative = env_loader.getNegative(
+            pos,
+            rotation,
+            config::siamese_sampling_strategy == "filter_by_value" ? getRandomFromFilteredIds(env_loader.getActionPairs()[pos].second["N"]) : -1);
 
         // write data to data_ptr
         std::copy(anchor.begin(), anchor.end(), getSharedData()->getDataPtr()->anchor_ + anchor.size() * batch_index);

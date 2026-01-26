@@ -28,6 +28,7 @@ Visualize one positive and all negative boards by given specific game id and ste
 
 ## Train siamese
 * Start a container first: `./scripts/start-container.sh`
+  * `siamese_nn_feature_channels` 4 for positive/negative board
 ### train-siamese.sh
 * `./scripts/train-siamese.sh go [config file] [end iteration] --link_sgf [sgf folder]`
   * Example: `./scripts/train-siamese.sh go go.cfg 300 --link_sgf sgf`

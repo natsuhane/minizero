@@ -15,12 +15,17 @@ class EvaluatorSharedData : public utils::BaseSharedData {
 public:
     std::size_t getAvailableGameIndex();
     std::vector<std::shared_ptr<minizero::network::NetworkOutput>> gpuForward(int nn_id, const std::vector<std::vector<float>>& features);
+    void calcAvgRank(int rank, int num_negatives);
+    void addRank1();
 
     std::size_t game_index_;
     std::mutex mutex_;
     std::vector<std::string> sgfs_;
     std::vector<std::shared_ptr<std::mutex>> nn_mutexs_;
     std::vector<std::shared_ptr<network::Network>> networks_;
+    int rank_one_;
+    int avg_rank_;
+    int total_steps_;
 };
 
 class EvaluatorThread : public utils::BaseSlaveThread {
@@ -35,7 +40,7 @@ public:
 private:
     bool is_done_;
 
-    void evaluateOneGame(const std::string& sgf);
+    void evaluateSiamese(const std::string& sgf);
     inline std::shared_ptr<EvaluatorSharedData> getSharedData() { return std::static_pointer_cast<EvaluatorSharedData>(shared_data_); }
 };
 

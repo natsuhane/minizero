@@ -80,6 +80,7 @@ private:
     void genNegativeByPolicy(EnvironmentLoader& env_loader);
     void assignLegalActionProbabilities(std::vector<EnvWithLegalActions>& info_set_envs, const std::vector<std::shared_ptr<minizero::network::NetworkOutput>>& nn_outputs);
     void verification(const EnvironmentLoader& true_env_loader, const std::vector<std::vector<std::string>>& verification_sgfs);
+    std::vector<int> filterBoards(const Environment& env, const EnvironmentLoader& env_loader, std::vector<minizero::env::GamePair<minizero::env::go::GoBitboard>>& negative_outputs, float threshold, int game_index, int game_step);
     std::string idtoString(const std::vector<int>& neg_ids);
     inline std::shared_ptr<ThreadSharedData> getSharedData() { return std::static_pointer_cast<ThreadSharedData>(shared_data_); }
     bool is_done_;

@@ -129,9 +129,15 @@ void ThreadSharedData::outputGames(const std::string& sgf)
 std::vector<std::shared_ptr<NetworkOutput>> ThreadSharedData::gpuForward(int nn_id, const std::vector<std::vector<float>>& features)
 {
     std::lock_guard lock(*nn_mutexs_[nn_id]);
-    std::shared_ptr<AlphaZeroNetwork> az_network = std::static_pointer_cast<AlphaZeroNetwork>(networks_[nn_id]);
-    for (auto& feature : features) { az_network->pushBack(feature); }
-    return az_network->forward();
+
+    if (networks_[nn_id]->getNetworkTypeName() == "alphazero") {
+        std::shared_ptr<AlphaZeroNetwork> az_network = std::static_pointer_cast<AlphaZeroNetwork>(networks_[nn_id]);
+        for (auto& feature : features) { az_network->pushBack(feature); }
+        return az_network->forward();
+    } else {
+        std::cerr << "Unknown network type: " << networks_[nn_id]->getNetworkTypeName() << std::endl;
+        return {};
+    }
 }
 
 void SlaveThread::runJob()
@@ -151,9 +157,15 @@ void SlaveThread::runJob()
         const std::string& sgf = getSharedData()->sgfs_[game_index];
         if (!env_loader.loadFromString(sgf)) { continue; }
 
-        if (env_loader.getTag("I").empty()) { std::cerr << "Source sgf doesn't include I tag." << std::endl; }
-        genNegativeByPolicy(env_loader);
+        if (getSharedData()->networks_[0]->getNetworkTypeName() == "alphazero") {
+            if (env_loader.getTag("I").empty()) { std::cerr << "Source sgf doesn't include I tag." << std::endl; }
+            genNegativeByPolicy(env_loader);
+        } else {
+            std::cerr << "Unknown network type from nn_file_name: " << getSharedData()->networks_[0]->getNetworkTypeName() << std::endl;
+        }
     }
+}
+
 void SlaveThread::statistic(const Environment& true_env, const std::vector<EnvWithLegalActions>& info_set_envs, env::Player turn)
 {
     std::vector<std::vector<float>> features;
@@ -282,10 +294,14 @@ void SlaveThread::verification(const EnvironmentLoader& true_env_loader, const s
         }
     }
 }
+
+std::vector<int> SlaveThread::filterBoards(
     const Environment& env,
     const EnvironmentLoader& env_loader,
-    std::vector<env::GamePair<env::go::GoBitboard>>& negative_outputs,
-    float threshold)
+    std::vector<minizero::env::GamePair<minizero::env::go::GoBitboard>>& negative_outputs,
+    float threshold,
+    int game_index,
+    int game_step)
 {
     std::vector<std::vector<float>> features;
     features.push_back(env.getFeatures()); // positive board
@@ -339,6 +355,8 @@ void IIGDataGenerator::initialize()
 
 void IIGDataGenerator::summarize()
 {
+    std::cerr << "Output generated data to " << config::siamese_generator_output_sgf << std::endl;
+
     if (config::siamese_generator_statistic == false) { return; }
     const std::filesystem::path stat_path("statistic");
     if (!std::filesystem::exists(stat_path)) { std::filesystem::create_directory(stat_path); }

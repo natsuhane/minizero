@@ -75,6 +75,8 @@ int nn_snapshot_interval = 1000;
 // siamese parameters
 std::string siamese_nn_type_name = "siamese";
 std::string siamese_nn_file_name = "";
+int siamese_nn_feature_channels = 4;
+int siamese_nn_embedding_size = 512;
 std::string siamese_train_sgf_file_name = "";
 std::string siamese_eval_sgf_file_name = "";
 int siamese_eval_num_negatives = 100;
@@ -182,6 +184,8 @@ void setConfiguration(ConfigureLoader& cl)
     // siamese parameters
     cl.addParameter("siamese_nn_type_name", siamese_nn_type_name, "the type of the siamese network architecture: siamese/binary_cnn", "Siamese");
     cl.addParameter("siamese_nn_file_name", siamese_nn_file_name, "the file name of siamese network model weights", "Siamese");
+    cl.addParameter("siamese_nn_feature_channels", siamese_nn_feature_channels, "the number of feature channels for the network input", "Siamese");
+    cl.addParameter("siamese_nn_embedding_size", siamese_nn_embedding_size, "the size of the output embedding vector", "Siamese");
     cl.addParameter("siamese_train_sgf_file_name", siamese_train_sgf_file_name, "the training sgf file name (replace --link_sgf)", "Siamese");
     cl.addParameter("siamese_eval_sgf_file_name", siamese_eval_sgf_file_name, "the testing sgf file name", "Siamese");
     cl.addParameter("siamese_eval_num_negatives", siamese_eval_num_negatives, "the number of negative boards returned per (anchor, positive) during evaluation/testing", "Siamese");

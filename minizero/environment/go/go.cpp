@@ -95,6 +95,8 @@ GoEnv& GoEnv::operator=(const GoEnv& env)
     stone_bitboard_history_ = env.stone_bitboard_history_;
     hashkey_history_ = env.hashkey_history_;
     hash_table_ = env.hash_table_;
+    captured_stone_bitboard_ = env.captured_stone_bitboard_;
+    num_captured_stones_ = env.num_captured_stones_;
 
     // reset grid's block and area pointer
     for (auto& grid : grids_) {
@@ -133,6 +135,10 @@ void GoEnv::reset()
     stone_bitboard_history_.clear();
     hashkey_history_.clear();
     hash_table_.clear();
+    captured_stone_bitboard_.reset();
+    num_captured_stones_.reset();
+    num_captured_stones_.get(Player::kPlayer1).resize(board_size_ * board_size_, 0.0f);
+    num_captured_stones_.get(Player::kPlayer2).resize(board_size_ * board_size_, 0.0f);
 }
 
 bool GoEnv::act(const GoAction& action)
@@ -146,6 +152,7 @@ bool GoEnv::act(const GoAction& action)
     turn_ = action.nextPlayer();
     hash_key_ ^= getGoTurnHashKey();
     actions_.push_back(action);
+    captured_stone_bitboard_.reset();
 
     if (isPassAction(action)) {
         stone_bitboard_history_.push_back(stone_bitboard_);
@@ -177,7 +184,18 @@ bool GoEnv::act(const GoAction& action)
             if (neighbor_block->getPlayer() == player) {
                 new_block = combineBlocks(new_block, neighbor_block);
             } else {
-                if (neighbor_block->getNumLiberty() == 0) { removeBlockFromBoard(neighbor_block); }
+                if (neighbor_block->getNumLiberty() == 0) {
+                    captured_stone_bitboard_ |= neighbor_block->getGridBitboard();
+
+                    GoBitboard grid_bitboard = neighbor_block->getGridBitboard();
+                    while (!grid_bitboard.none()) {
+                        int pos = grid_bitboard._Find_first();
+                        grid_bitboard.reset(pos);
+                        ++num_captured_stones_.get(neighbor_block->getPlayer())[pos];
+                    }
+
+                    removeBlockFromBoard(neighbor_block);
+                }
             }
         }
     }
@@ -943,6 +961,7 @@ std::unordered_set<int> GoEnvLoader::getUnmovableOpponentPositions(int pos) cons
 
 std::vector<float> GoEnvLoader::getAnchor(int target_pos, utils::Rotation rotation /*= utils::Rotation::kRotationNone*/) const
 {
+    ++target_pos; // consistent with negative and positive
     const int N = getBoardSize();
     const int H = 12; // history length
     const int C = 6;  // channels per timestep
@@ -1044,8 +1063,10 @@ std::vector<float> GoEnvLoader::getAnchor(int target_pos, utils::Rotation rotati
 
 std::vector<float> GoEnvLoader::getPositive(int pos, utils::Rotation rotation /*= utils::Rotation::kRotationNone*/) const
 {
-    GoEnv env = rebuildToStep(pos);
-    return bitboardToFeature(env.getStoneBitboard(), env.getTurn(), rotation, false);
+    GoEnv env;
+    const auto& action_pairs = getActionPairs();
+    for (int i = 0; i <= pos; ++i) { env.act(action_pairs[i].first); }
+    return env.getSiameseFeatures(rotation);
 }
 
 std::vector<float> GoEnvLoader::getNegative(int pos, utils::Rotation rotation /*= utils::Rotation::kRotationNone*/, int index /* = -1*/) const

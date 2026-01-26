@@ -83,6 +83,7 @@ protected:
     virtual bool addEnvironmentLoader();
     virtual bool sampleData();
 
+    int getRandomFromFilteredIds(const std::string& filtered_ids);
     virtual void setIIGTrainingData(int batch_index);
     virtual void setAlphaZeroTrainingData(int batch_index);
     virtual void setMuZeroTrainingData(int batch_index);

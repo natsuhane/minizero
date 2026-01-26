@@ -77,6 +77,8 @@ extern int nn_snapshot_interval;
 // siamese parameters
 extern std::string siamese_nn_type_name;
 extern std::string siamese_nn_file_name;
+extern int siamese_nn_feature_channels;
+extern int siamese_nn_embedding_size;
 extern std::string siamese_train_sgf_file_name;
 extern std::string siamese_eval_sgf_file_name;
 extern int siamese_eval_num_negatives;

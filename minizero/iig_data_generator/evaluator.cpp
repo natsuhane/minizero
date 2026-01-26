@@ -7,6 +7,9 @@
 #include "utils.h"
 #include <algorithm>
 #include <chrono>
+#include <cmath>   // std::log10
+#include <iomanip> // std::setprecision
+#include <iostream>
 #include <memory>
 #include <random>
 #include <torch/cuda.h>
@@ -14,6 +17,7 @@
 namespace minizero::iig_data_generator {
 
 using namespace network;
+using namespace utils;
 
 std::size_t EvaluatorSharedData::getAvailableGameIndex()
 {
@@ -24,15 +28,34 @@ std::size_t EvaluatorSharedData::getAvailableGameIndex()
 std::vector<std::shared_ptr<NetworkOutput>> EvaluatorSharedData::gpuForward(int nn_id, const std::vector<std::vector<float>>& features)
 {
     std::lock_guard lock(*nn_mutexs_[nn_id]);
-    std::shared_ptr<SiameseNetwork> siamese_network = std::static_pointer_cast<SiameseNetwork>(networks_[nn_id]);
-    for (auto& feature : features) {
-        if (feature.size() > 4 * 9 * 9) { // TODO: fix this hard code numbers
-            siamese_network->pushBackAnchor(feature);
-        } else {
-            siamese_network->pushBackBoard(feature);
+
+    if (networks_[nn_id]->getNetworkTypeName() == "siamese") {
+        std::shared_ptr<SiameseNetwork> siamese_network = std::static_pointer_cast<SiameseNetwork>(networks_[nn_id]);
+        for (auto& feature : features) {
+            if (feature.size() > config::siamese_nn_feature_channels * config::env_board_size * config::env_board_size) {
+                siamese_network->pushBackAnchor(feature);
+            } else {
+                siamese_network->pushBackBoard(feature);
+            }
         }
+        return siamese_network->forward();
+    } else {
+        std::cerr << "Unknown network type: " << networks_[nn_id]->getNetworkTypeName() << std::endl;
+        return {};
     }
-    return siamese_network->forward();
+}
+
+void EvaluatorSharedData::calcAvgRank(int rank, int num_negatives)
+{
+    std::lock_guard lock(mutex_);
+    avg_rank_ += rank / num_negatives;
+    total_steps_++;
+}
+
+void EvaluatorSharedData::addRank1()
+{
+    std::lock_guard lock(mutex_);
+    rank_one_++;
 }
 
 void EvaluatorThread::runJob()
@@ -46,11 +69,18 @@ void EvaluatorThread::runJob()
         // print progress
         if (game_index % 500 == 0) { std::cerr << "Processing game " << game_index << std::endl; }
 
-        evaluateOneGame(getSharedData()->sgfs_[game_index]);
+        // evaluate one game
+        if (getSharedData()->networks_[0]->getNetworkTypeName() == "siamese") {
+            evaluateSiamese(getSharedData()->sgfs_[game_index]);
+        } else {
+            std::cerr << "Unknown network type from siamese_nn_file_name: " << getSharedData()->networks_[0]->getNetworkTypeName() << std::endl;
+            is_done_ = true;
+            return;
+        }
     }
 }
 
-void EvaluatorThread::evaluateOneGame(const std::string& sgf)
+void EvaluatorThread::evaluateSiamese(const std::string& sgf)
 {
     EnvironmentLoader env_loader;
     if (!env_loader.loadFromString(sgf)) { return; }
@@ -98,6 +128,8 @@ void EvaluatorThread::evaluateOneGame(const std::string& sgf)
                   << ", min = " << std::setw(8) << min
                   << ", max = " << std::setw(8) << max
                   << ", avg = " << std::setw(8) << sum / num_negatives << std::endl;
+        getSharedData()->calcAvgRank(rank, num_negatives);
+        if (rank == 1) { getSharedData()->addRank1(); }
     }
 }
 
@@ -124,6 +156,8 @@ void Evaluator::initialize()
 
 void Evaluator::summarize()
 {
+    std::cerr << "Average rank: " << static_cast<float>(getSharedData()->avg_rank_) / getSharedData()->total_steps_ << std::endl;
+    std::cerr << "Possibility of rank 1: " << static_cast<float>(getSharedData()->rank_one_) / getSharedData()->total_steps_ << std::endl;
 }
 
 void Evaluator::createNeuralNetworks()

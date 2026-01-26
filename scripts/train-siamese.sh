@@ -101,7 +101,13 @@ if [ $num_cpu_thread -gt $max_num_cpu_thread ]; then
 	num_cpu_thread=$max_num_cpu_thread
 fi
 
+run_stage="R"
+if [ -d ${train_dir} ]; then
+	read -n1 -p "${train_dir} has existed. (R)estart / (C)ontinue / (Q)uit? " run_stage
+	echo ""
+fi
 
+if [[ ${run_stage,} == "r" ]]; then
 rm -rf ${train_dir}
 echo "create ${train_dir} ..."
 mkdir -p ${train_dir}/model ${train_dir}/sgf
@@ -123,3 +129,6 @@ echo "train \"\" -1 -1" | CUDA_VISIBLE_DEVICES=${cuda_devices} PYTHONPATH=. pyth
 
 # format: py/Train.py train_dir conf_file
 echo -e "start\ntrain weight_iter_0.pkl 1 1" | CUDA_VISIBLE_DEVICES=${cuda_devices} PYTHONPATH=. python ${op_executable_file} ${game_type} ${train_dir} ${train_dir}/${new_configure_file} 2> >(tee -a ${train_dir}/op.log >&2)
+else
+	exit
+fi
