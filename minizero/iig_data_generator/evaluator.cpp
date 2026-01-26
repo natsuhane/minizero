@@ -2,6 +2,7 @@
 #include "configuration.h"
 #include "create_network.h"
 #include "go.h"
+#include "info_set_generator_network.h"
 #include "random.h"
 #include "siamese_network.h"
 #include "utils.h"
@@ -39,6 +40,10 @@ std::vector<std::shared_ptr<NetworkOutput>> EvaluatorSharedData::gpuForward(int 
             }
         }
         return siamese_network->forward();
+    } else if (networks_[nn_id]->getNetworkTypeName() == "info_set_generator") {
+        std::shared_ptr<InfoSetGeneratorNetwork> info_set_generator_network = std::static_pointer_cast<InfoSetGeneratorNetwork>(networks_[nn_id]);
+        for (auto& feature : features) { info_set_generator_network->pushBack(feature); }
+        return info_set_generator_network->forward();
     } else {
         std::cerr << "Unknown network type: " << networks_[nn_id]->getNetworkTypeName() << std::endl;
         return {};
@@ -72,6 +77,8 @@ void EvaluatorThread::runJob()
         // evaluate one game
         if (getSharedData()->networks_[0]->getNetworkTypeName() == "siamese") {
             evaluateSiamese(getSharedData()->sgfs_[game_index]);
+        } else if (getSharedData()->networks_[0]->getNetworkTypeName() == "info_set_generator") {
+            evaluateInfoSetGenerator(getSharedData()->sgfs_[game_index]);
         } else {
             std::cerr << "Unknown network type from siamese_nn_file_name: " << getSharedData()->networks_[0]->getNetworkTypeName() << std::endl;
             is_done_ = true;
@@ -133,6 +140,64 @@ void EvaluatorThread::evaluateSiamese(const std::string& sgf)
     }
 }
 
+void EvaluatorThread::evaluateInfoSetGenerator(const std::string& sgf)
+{
+    EnvironmentLoader env_loader;
+    if (!env_loader.loadFromString(sgf)) { return; }
+
+    for (int pos = 1; pos < static_cast<int>(env_loader.getActionPairs().size()); ++pos) {
+        if (pos >= static_cast<int>(env_loader.getActionPairs().size())) { return; }
+        Rotation rotation = config::actor_use_random_rotation_features ? static_cast<Rotation>(Random::randInt() % static_cast<int>(Rotation::kRotateSize)) : Rotation::kRotationNone;
+        Environment env;
+        for (int i = 0; i < pos; ++i) { env.act(env_loader.getActionPairs()[i].first); }
+        int move_number = (pos % 2 == 0 ? 1 : 0);
+        float correct_prob = 1.0f; // product of all opponent moves' predictions
+        float min_prob = 1.0f;
+        std::vector<std::vector<float>> features;
+        while (move_number < pos) {
+            features.push_back(env.getInfoSetGeneratorFeatures(move_number, rotation));
+
+            move_number += 2;
+        }
+        auto res = getSharedData()->gpuForward(id_ % getSharedData()->networks_.size(), features);
+
+        std::vector<uint64_t> possible(101, 0);
+        for (int threshold = 0; threshold <= 100; ++threshold) {
+            uint64_t p = 1;
+            float t = threshold / 100.0f;
+
+            move_number = (pos % 2 == 0 ? 1 : 0);
+            int counter = 0;
+
+            while (move_number < pos) {
+                Environment temp_env;
+                for (int i = 0; i < move_number; ++i) { temp_env.act(env_loader.getActionPairs()[i].first); }
+                int ans_grid = env_loader.getActionPairs()[move_number].first.getActionID();
+                int rotated_ans_grid = env_loader.getRotateAction(ans_grid, rotation);
+
+                uint64_t count = 0;
+                for (int i = 0; i < env_loader.getPolicySize(); ++i) {
+                    if (std::static_pointer_cast<InfoSetGeneratorNetworkOutput>(res[counter])->policy_[i] >= t) { ++count; }
+                }
+                p *= std::max(uint64_t(1), count);
+                min_prob = std::min(min_prob, std::static_pointer_cast<InfoSetGeneratorNetworkOutput>(res[counter])->policy_[rotated_ans_grid]);
+                counter++;
+                move_number += 2;
+            }
+            possible[threshold] = p;
+        }
+
+        {
+            std::lock_guard lock(getSharedData()->mutex_);
+            for (int i = 0; i < 101; ++i) {
+                if (min_prob * 100 >= i) { getSharedData()->corrects_[i] += 1.0f; }
+                getSharedData()->possibles_[i] += possible[i];
+            }
+            ++getSharedData()->totals_;
+        }
+    }
+}
+
 void Evaluator::initialize()
 {
     int num_threads = std::max(static_cast<int>(torch::cuda::device_count()), config::zero_num_threads);
@@ -151,6 +216,12 @@ void Evaluator::initialize()
     getSharedData()->sgfs_.clear();
     for (std::string sgf; std::getline(fin, sgf);) { getSharedData()->sgfs_.push_back(sgf); }
 
+    getSharedData()->corrects_.clear();
+    getSharedData()->corrects_.resize(101, 0.0f);
+    getSharedData()->possibles_.clear();
+    getSharedData()->possibles_.resize(101, 0);
+    getSharedData()->totals_ = 0;
+
     std::cerr << "Finish initializing" << std::endl;
 }
 
@@ -158,6 +229,26 @@ void Evaluator::summarize()
 {
     std::cerr << "Average rank: " << static_cast<float>(getSharedData()->avg_rank_) / getSharedData()->total_steps_ << std::endl;
     std::cerr << "Possibility of rank 1: " << static_cast<float>(getSharedData()->rank_one_) / getSharedData()->total_steps_ << std::endl;
+    float total = getSharedData()->totals_;
+    std::cerr << "guess correct vs infoset size (for " << total << " samples)" << std::endl;
+    std::ofstream outfile("evaluation_result.csv");
+    if (!outfile.is_open()) {
+        std::cerr << "Error: Could not create evaluation_result.csv" << std::endl;
+        return;
+    }
+    outfile << "threshold,accuracy,log_avg_possibility\n";
+    for (int i = 0; i <= 100; ++i) {
+        float threshold = i / 100.0f;
+        float correct_rate = getSharedData()->corrects_[i] / total;
+        double possible_rate = static_cast<double>(getSharedData()->possibles_[i]) / total;
+        std::cerr << "  threshold " << threshold << ": " << correct_rate << " " << possible_rate << std::endl;
+        double log_size = std::log10(possible_rate);
+        outfile << threshold << ","
+                << correct_rate << ","
+                << log_size << "\n";
+    }
+    outfile.close();
+    std::cerr << "Data saved to evaluation_result.csv" << std::endl;
 }
 
 void Evaluator::createNeuralNetworks()

@@ -5,11 +5,12 @@ support_games=($(awk '/target_include_directories/,/\)/' ${env_cmakelists} | sed
 
 usage()
 {
-	echo "Usage: $0 GAME_TYPE CONFIGURE_FILE END_ITERATION [OPTION]..."
-	echo "The script for training siamese networks."
+	echo "Usage: $0 GAME_TYPE NETWORK_TYPE CONFIGURE_FILE END_ITERATION [OPTION]..."
+	echo "The script for training networks."
 	echo ""
 	echo "Required arguments:"
     echo "  GAME_TYPE: ${support_games[@]}"
+	echo "  NETWORK_TYPE: siamese/info_set_generator"
 	echo "  CONFIGURE_FILE: the configure file (*.cfg) to use"
 	echo "  END_ITERATION: the total number of iterations for training"
 	echo ""
@@ -27,11 +28,12 @@ usage()
 	exit 1
 }
 
-if [ $# -lt 3 ] || [ $(($# % 2)) -eq 0 ];
+if [ $# -lt 4 ] || [ $(($# % 2)) -eq 0 ];
 then
 	usage
 else
 	game_type=$1; shift
+	network_type=$1; shift
 	configure_file=$1; shift
 	end_iteration=$1; shift
 	
@@ -48,7 +50,13 @@ name_prefix=""
 name_suffix=""
 link_sgf=""
 sp_executable_file=build/${game_type}/minizero_${game_type}
-op_executable_file=minizero/learner/train_siamese.py
+
+if [[ ${network_type} == "siamese" ]]; then
+	op_executable_file=minizero/learner/train_siamese.py
+elif [[ ${network_type} == "info_set_generator" ]]; then
+	op_executable_file=minizero/learner/train_info_set_generator.py
+fi
+
 while :; do
 	case $1 in
 		-h|--help) shift; usage
@@ -61,7 +69,7 @@ while :; do
 		;;
 		-g|--gpu) shift; gpu_list=$1; num_gpu=${#gpu_list}
 		;;
-		-b|--batch_Size) shift; batch_size=$1
+		-b|--batch_size) shift; batch_size=$1
 		;;
 		-c|--cpu_thread_per_gpu) shift; max_num_cpu_thread_per_gpu=$1
 		;;
@@ -108,27 +116,25 @@ if [ -d ${train_dir} ]; then
 fi
 
 if [[ ${run_stage,} == "r" ]]; then
-rm -rf ${train_dir}
-echo "create ${train_dir} ..."
-mkdir -p ${train_dir}/model ${train_dir}/sgf
-if [[ ! -z ${link_sgf} ]];
-then
-    ln ${link_sgf}/* ${train_dir}/sgf/
-    end_iteration=$(ls ${train_dir}/sgf/ | wc -l)
-    echo "link ${link_sgf} ..."
-    echo "end_iteration: ${end_iteration}"
-fi
-touch ${train_dir}/Training.log
-touch ${train_dir}/op.log
-new_configure_file=$(basename ${train_dir}).cfg
-${sp_executable_file} -gen ${train_dir}/${new_configure_file} -conf_file ${configure_file} -conf_str "${overwrite_conf_str}" 2>/dev/null
+	rm -rf ${train_dir}
+	echo "create ${train_dir} ..."
+	mkdir -p ${train_dir}/model ${train_dir}/sgf
+	if [[ ! -z ${link_sgf} ]];
+	then
+		ln ${link_sgf}/* ${train_dir}/sgf/
+		end_iteration=$(ls ${train_dir}/sgf/ | wc -l)
+		echo "link ${link_sgf} ..."
+		echo "end_iteration: ${end_iteration}"
+	fi
+	touch ${train_dir}/Training.log
+	touch ${train_dir}/op.log
+	new_configure_file=$(basename ${train_dir}).cfg
+	${sp_executable_file} -gen ${train_dir}/${new_configure_file} -conf_file ${configure_file} -conf_str "${overwrite_conf_str}" 2>/dev/null
 
-# setup initial weight
-cuda_devices=$(echo ${gpu_list} | awk '{ split($0, chars, ""); printf(chars[1]); for(i=2; i<=length(chars); ++i) { printf(","chars[i]); } }')
-echo "train \"\" -1 -1" | CUDA_VISIBLE_DEVICES=${cuda_devices} PYTHONPATH=. python ${op_executable_file} ${game_type} ${train_dir} ${train_dir}/${new_configure_file} >/dev/null 2>&1
-
-# format: py/Train.py train_dir conf_file
-echo -e "start\ntrain weight_iter_0.pkl 1 1" | CUDA_VISIBLE_DEVICES=${cuda_devices} PYTHONPATH=. python ${op_executable_file} ${game_type} ${train_dir} ${train_dir}/${new_configure_file} 2> >(tee -a ${train_dir}/op.log >&2)
+	# setup initial weight
+	cuda_devices=$(echo ${gpu_list} | awk '{ split($0, chars, ""); printf(chars[1]); for(i=2; i<=length(chars); ++i) { printf(","chars[i]); } }')
+	echo "train \"\" -1 -1" | CUDA_VISIBLE_DEVICES=${cuda_devices} PYTHONPATH=. python ${op_executable_file} ${game_type} ${train_dir} ${train_dir}/${new_configure_file} >/dev/null 2>&1
+	echo -e "start\ntrain weight_iter_0.pkl 1 1" | CUDA_VISIBLE_DEVICES=${cuda_devices} PYTHONPATH=. python ${op_executable_file} ${game_type} ${train_dir} ${train_dir}/${new_configure_file} 2> >(tee -a ${train_dir}/op.log >&2)
 else
 	exit
 fi

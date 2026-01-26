@@ -1,6 +1,7 @@
 #pragma once
 
 #include "alphazero_network.h"
+#include "info_set_generator_network.h"
 #include "muzero_network.h"
 #include "network.h"
 #include "siamese_network.h"
@@ -25,6 +26,9 @@ inline std::shared_ptr<Network> createNetwork(const std::string& nn_file_name, c
     } else if (base_network.getNetworkTypeName() == "siamese") {
         network = std::make_shared<SiameseNetwork>();
         std::dynamic_pointer_cast<SiameseNetwork>(network)->loadModel(nn_file_name, gpu_id);
+    } else if (base_network.getNetworkTypeName() == "info_set_generator") {
+        network = std::make_shared<InfoSetGeneratorNetwork>();
+        std::dynamic_pointer_cast<InfoSetGeneratorNetwork>(network)->loadModel(nn_file_name, gpu_id);
     } else {
         // should not be here
         assert(false);

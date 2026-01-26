@@ -186,6 +186,8 @@ bool DataLoaderThread::sampleData()
 
     if (config::siamese_nn_type_name == "siamese" || config::siamese_nn_type_name == "binary_cnn") {
         setIIGTrainingData(batch_index);
+    } else if (config::nn_type_name == "info_set_generator") {
+        setInfoSetGeneratorTrainingData(batch_index);
     } else if (config::nn_type_name == "alphazero") {
         setAlphaZeroTrainingData(batch_index);
     } else if (config::nn_type_name == "muzero") {
@@ -245,6 +247,24 @@ void DataLoaderThread::setIIGTrainingData(int batch_index)
 
         break;
     }
+}
+
+void DataLoaderThread::setInfoSetGeneratorTrainingData(int batch_index)
+{
+    std::pair<int, int> p = getSharedData()->replay_buffer_.sampleEnvAndPos();
+    int env_id = p.first, pos = p.second;
+
+    const EnvironmentLoader& env_loader = getSharedData()->replay_buffer_.env_loaders_[env_id];
+    Rotation rotation = config::actor_use_random_rotation_features ? static_cast<Rotation>(Random::randInt() % static_cast<int>(Rotation::kRotateSize)) : Rotation::kRotationNone;
+    Environment env;
+    for (int i = 0; i < pos; ++i) { env.act(env_loader.getActionPairs()[i].first); }
+
+    int move_number = (pos == 0 ? 0 : ((Random::randInt() % ((pos + 1) / 2)) * 2 + (1 - (pos % 2))));
+    std::vector<float> features = env.getInfoSetGeneratorFeatures(move_number, rotation);
+    std::vector<float> labels(env_loader.getPolicySize(), 0.0f);
+    labels[env_loader.getRotateAction(env_loader.getActionPairs()[move_number].first.getActionID(), rotation)] = 1.0f;
+    std::copy(features.begin(), features.end(), getSharedData()->getDataPtr()->features_ + features.size() * batch_index);
+    std::copy(labels.begin(), labels.end(), getSharedData()->getDataPtr()->labels_ + labels.size() * batch_index);
 }
 
 void DataLoaderThread::setAlphaZeroTrainingData(int batch_index)

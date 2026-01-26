@@ -26,12 +26,14 @@ Visualize one positive and all negative boards by given specific game id and ste
   * `siamese_game_step`
 * `./visualizer/run_web.sh`
 
-## Train siamese
+## Train siamese/info set generator
 * Start a container first: `./scripts/start-container.sh`
-  * `siamese_nn_feature_channels` 4 for positive/negative board
-### train-siamese.sh
-* `./scripts/train-siamese.sh go [config file] [end iteration] --link_sgf [sgf folder]`
-  * Example: `./scripts/train-siamese.sh go go.cfg 300 --link_sgf sgf`
+  * `siamese_nn_feature_channels`
+    * 4 for positive/negative board (siamese)
+    * 28 for info set generator
+### train.sh
+* `./scripts/train.sh go [network type] [config file] [end iteration] --link_sgf [sgf folder]`
+  * Example: `./scripts/train.sh go info_set_generator go.cfg 300 --link_sgf sgf`
   * Do op only
   * `--link_sgf`: Copy the sgf folder to training folder
   ```
@@ -39,13 +41,6 @@ Visualize one positive and all negative boards by given specific game id and ste
   --1.sgf
   ```
   * To be completed
-
-### zero-server & worker
-* `./scripts/zero-server.sh go [config file] [end iteration] --link_sgf [sgf folder] --op_executable_file minizero/learner/train_siamese.py`
-  * Example: `./scripts/zero-server.sh go go.cfg 300 --link_sgf sgf --op_executable_file minizero/learner/train_siamese.py -g 0 -conf_str learner_batch_size=16`
-* `./scripts/zero-worker.sh go [host] [port] op --op_executable_file minizero/learner/train_siamese.py`
-  * Example: `./scripts/zero-worker.sh go localhost 9999 op --op_executable_file minizero/learner/train_siamese.py`
-  * PORT: see `zero_server_port`
 
 ## Training figures
 * Re-draw the training figures (training folder/analysis/*): `python tools/analysis.py -in_dir [training folder]`

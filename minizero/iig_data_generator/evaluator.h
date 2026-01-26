@@ -26,6 +26,10 @@ public:
     int rank_one_;
     int avg_rank_;
     int total_steps_;
+
+    int totals_;
+    std::vector<uint64_t> possibles_;
+    std::vector<float> corrects_;
 };
 
 class EvaluatorThread : public utils::BaseSlaveThread {
@@ -41,6 +45,7 @@ private:
     bool is_done_;
 
     void evaluateSiamese(const std::string& sgf);
+    void evaluateInfoSetGenerator(const std::string& sgf);
     inline std::shared_ptr<EvaluatorSharedData> getSharedData() { return std::static_pointer_cast<EvaluatorSharedData>(shared_data_); }
 };
 

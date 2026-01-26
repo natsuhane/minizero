@@ -359,6 +359,44 @@ std::vector<float> GoEnv::getSiameseFeatures(utils::Rotation rotation /*= utils:
     return features;
 }
 
+std::vector<float> GoEnv::getInfoSetGeneratorFeatures(int move_number, utils::Rotation rotation /*= utils::Rotation::kRotationNone*/) const
+{
+    /* 28 channels:
+        0~7. our previous 8 boards
+        8~15. opponent previous 8 boards
+        16~23. our next 8 moves position (16 moves ahead)
+        24. our current board
+        25. opponent current board
+        26. our color is black
+        27. our color is white
+    */
+    Player next_turn = getNextPlayer(turn_, kGoNumPlayer);
+    const int num_grids = board_size_ * board_size_;
+    std::vector<float> features(28 * num_grids, 0.0f);
+    for (int i = 0; i < 8; ++i) { // 0~15 channels
+        if (move_number - i - 1 < 0) { break; }
+        const GamePair<GoBitboard>& past_stone_bitboard = stone_bitboard_history_[move_number - i - 1];
+        for (int pos = 0; pos < num_grids; ++pos) {
+            int rotated_pos = getRotatePosition(pos, rotation);
+            if (past_stone_bitboard.get(turn_).test(pos)) { features[i * num_grids + rotated_pos] = 1.0f; }
+            if (past_stone_bitboard.get(next_turn).test(pos)) { features[(i + 8) * num_grids + rotated_pos] = 1.0f; }
+        }
+    }
+    for (int i = 0; i < 8; ++i) { // 16~23 channels
+        if (move_number + i * 2 + 1 >= static_cast<int>(actions_.size())) { break; }
+        const GoAction& future_action = actions_[move_number + i * 2 + 1];
+        features[(i + 16) * num_grids + getRotatePosition(future_action.getActionID(), rotation)] = 1.0f;
+    }
+    for (int pos = 0; pos < num_grids; ++pos) { // 24~25 channels
+        int rotated_pos = getRotatePosition(pos, rotation);
+        if (stone_bitboard_history_.size() > 0 && stone_bitboard_history_.back().get(turn_).test(pos)) { features[24 * num_grids + rotated_pos] = 1.0f; }
+        if (move_number - 1 > 0 && move_number - 1 < static_cast<int>(stone_bitboard_history_.size()) && stone_bitboard_history_[move_number - 1].get(next_turn).test(pos)) { features[25 * num_grids + rotated_pos] = 1.0f; }
+    }
+    std::fill(features.begin() + (turn_ == Player::kPlayer1 ? 26 : 27) * num_grids,
+              features.begin() + (turn_ == Player::kPlayer1 ? 27 : 28) * num_grids, 1.0f);
+    return features;
+}
+
 std::vector<float> GoEnv::getActionFeatures(const GoAction& action, utils::Rotation rotation /*= utils::Rotation::kRotationNone*/) const
 {
     std::vector<float> action_features(board_size_ * board_size_, 0.0f);

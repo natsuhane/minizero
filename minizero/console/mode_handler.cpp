@@ -6,6 +6,7 @@
 #include "evaluator.h"
 #include "git_info.h"
 #include "iig_data_generator.h"
+#include "info_set_generator_network.h"
 #include "obs_recover.h"
 #include "obs_remover.h"
 #include "ostream_redirector.h"
@@ -15,8 +16,12 @@
 #include "time_system.h"
 #include "utils.h"
 #include "zero_server.h"
+#include <algorithm>
 #include <fstream>
 #include <iostream>
+#include <limits>
+#include <queue>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -223,7 +228,13 @@ void ModeHandler::runDataSet()
     return;
 }
 
-// visualize sgf with positive and negative samples
+struct ISQueueItem {
+    Environment env_;
+    float acc_prob_;
+    std::vector<float> probs_;
+};
+
+// for info set generator
 void ModeHandler::runVisualizeSgf()
 {
     // find target game by id
@@ -236,87 +247,127 @@ void ModeHandler::runVisualizeSgf()
         break;
     }
 
-    std::vector<float> dis;
-    {
-        // calculate distance between anchor and postive/negative
-        std::shared_ptr<SiameseNetwork> si_network = std::static_pointer_cast<SiameseNetwork>(createNetwork("go_9x9_siamese_1bx256_k5000-7b5d23-dirty/model/weight_iter_100.pt", 0));
-        si_network->pushBackBoard(env_loader.getPositive(config::siamese_game_step - 1, utils::Rotation::kRotationNone));
-        int num_negatives = std::stoi(env_loader.getActionPairs()[config::siamese_game_step - 1].second["N"]);
-        for (int neg_id = 0; neg_id < num_negatives; ++neg_id) {
-            std::vector<float> negative = env_loader.getNegative(config::siamese_game_step - 1, utils::Rotation::kRotationNone, neg_id);
-            si_network->pushBackBoard(negative);
-        }
-        auto embs = si_network->forward();
-        si_network->pushBackAnchor(env_loader.getAnchor(config::siamese_game_step - 1, utils::Rotation::kRotationNone));
-        auto anchor_emb = si_network->forward();
-        for (auto& e : embs) {
-            auto a = std::static_pointer_cast<SiameseNetworkOutput>(e);
-            auto b = std::static_pointer_cast<SiameseNetworkOutput>(anchor_emb[0]);
-            dis.push_back(utils::distance(a->embeddings_, b->embeddings_));
-        }
-    }
-
     // positive sgf
-    Environment env;
+    Environment true_env;
     std::string positive_sgf;
     std::vector<std::string> sgf_outputs;
+    std::vector<float> prob_outputs;
+    std::vector<std::vector<float>> prob_outputs_per_step;
     int target_game_step = config::siamese_game_step;
-    const std::string sgf_prefix = "<div data-wgo=\"(;FF[4]GM[1]SZ[9]KM[7.000000]";
-    const std::string sgf_suffix = ")\" data-wgo-layout=\"\"  data-wgo-move=\"100\" style=\"width: 10%; margin: 0\"></div>";
-    std::shared_ptr<AlphaZeroNetwork> az_network = std::static_pointer_cast<AlphaZeroNetwork>(createNetwork(config::nn_file_name, 0));
+
+    const std::string sgf_prefix = "(;FF[4]GM[1]SZ[9]KM[7.000000]";
+    const std::string sgf_suffix = ")";
     std::cerr << "Loaded environment up to step " << target_game_step << std::endl;
     for (int pos = 0; pos < target_game_step; ++pos) {
-        env.act(env_loader.getActionPairs()[pos].first);
+        true_env.act(env_loader.getActionPairs()[pos].first);
         positive_sgf += ";" +
                         std::string(1, env::playerToChar(env_loader.getActionPairs()[pos].first.getPlayer())) +
                         "[" +
                         utils::SGFLoader::actionIDToSGFString(env_loader.getActionPairs()[pos].first.getActionID(), env_loader.getBoardSize()) +
                         "]";
     }
-    az_network->pushBack(env.getFeatures());
     sgf_outputs.push_back(sgf_prefix + positive_sgf + sgf_suffix);
-
+    prob_outputs.push_back(0.0f);
+    prob_outputs_per_step.push_back(std::vector<float>());
     // negative sgfs
-    // for new dataset (use perfect policy for opponent)
-    std::cerr << env_loader.getActionPairs()[target_game_step - 1].second["N"] << std::endl;
-    int num_negatives = std::stoi(env_loader.getActionPairs()[target_game_step - 1].second["N"]);
-    for (int i = 0; i < num_negatives; ++i) {
-        Environment neg_env;
-        auto action_history = env_loader.getNegativeActionHistory(target_game_step - 1, i);
-        std::string negative_sgf;
-        for (auto& action : action_history) {
-            neg_env.act(action);
-            negative_sgf += ";" +
-                            std::string(1, env::playerToChar(action.getPlayer())) +
-                            "[" +
-                            utils::SGFLoader::actionIDToSGFString(action.getActionID(), env_loader.getBoardSize()) +
-                            "]";
+    std::shared_ptr<InfoSetGeneratorNetwork> is_network = std::static_pointer_cast<InfoSetGeneratorNetwork>(createNetwork(config::siamese_nn_file_name, 0));
+    std::priority_queue<ISQueueItem, std::vector<ISQueueItem>, std::function<bool(const ISQueueItem&, const ISQueueItem&)>> queue(
+        [](const ISQueueItem& a, const ISQueueItem& b) { return a.acc_prob_ < b.acc_prob_; });
+    // std::queue<ISQueueItem> queue;
+    queue.push({Environment(), 1.0f, {}});
+    int true_board_id = 0;
+    while (!queue.empty() && static_cast<int>(sgf_outputs.size()) <= config::siamese_max_num_negatives) {
+        auto current = queue.top();
+        // auto current = queue.front();
+        queue.pop();
+        float acc_prob = current.acc_prob_;
+
+        // output sgf
+        if (current.env_.getActionHistory().size() == true_env.getActionHistory().size()) {
+            // check consistency of our pieces
+            if (current.env_.getStoneBitboard().get(true_env.getTurn()) != true_env.getStoneBitboard().get(true_env.getTurn())) { continue; }
+            std::string negative_sgf;
+            for (const auto& action : current.env_.getActionHistory()) {
+                negative_sgf += ";" +
+                                std::string(1, env::playerToChar(action.getPlayer())) +
+                                "[" +
+                                utils::SGFLoader::actionIDToSGFString(action.getActionID(), current.env_.getBoardSize()) +
+                                "]";
+            }
+            sgf_outputs.push_back(sgf_prefix + negative_sgf + sgf_suffix);
+            if (sgf_outputs.back() == sgf_outputs[0]) { true_board_id = sgf_outputs.size() - 1; }
+            prob_outputs.push_back(acc_prob);
+            prob_outputs_per_step.push_back(current.probs_);
+            continue;
         }
 
-        az_network->pushBack(neg_env.getFeatures());
-        sgf_outputs.push_back(sgf_prefix + negative_sgf + sgf_suffix);
+        // if our turn, play true action until reach opponent turn
+        while (current.env_.getTurn() == true_env.getTurn()) {
+            const Action& action = true_env.getActionHistory()[current.env_.getActionHistory().size()];
+            if (!current.env_.isLegalAction(action)) { break; }
+            current.env_.act(action);
+        }
+        if (current.env_.getTurn() == true_env.getTurn()) { continue; } // if still our turn, skip this case (only happens if true action is illegal)
+
+        // create fake environment by playing pass moves for opponent to get features
+        Environment fake_env = current.env_;
+        for (size_t move = current.env_.getActionHistory().size(); move < true_env.getActionHistory().size(); ++move) {
+            Action action = ((fake_env.getTurn() == true_env.getTurn())
+                                 ? true_env.getActionHistory()[move]
+                                 : Action(true_env.getBoardSize() * true_env.getBoardSize(), fake_env.getTurn())); // if not our turn, play pass
+            fake_env.act(action);
+        }
+
+        std::vector<float> features = fake_env.getInfoSetGeneratorFeatures(current.env_.getActionHistory().size(), Rotation::kRotationNone);
+        is_network->pushBack(features);
+        auto res = is_network->forward();
+        auto policy_output = std::static_pointer_cast<InfoSetGeneratorNetworkOutput>(res[0]);
+
+        for (size_t pos = 0; pos < policy_output->policy_.size(); ++pos) {
+            Action action(pos, current.env_.getTurn());
+            if (!current.env_.isLegalAction(action)) { continue; }
+            Environment next_env = current.env_;
+            next_env.act(action);
+            float p = policy_output->policy_[pos];
+            if (p < config::siamese_generator_policy_threshold) { continue; }
+            std::vector<float> new_probs = current.probs_;
+            new_probs.push_back(p);
+            queue.push({next_env, acc_prob * p, new_probs});
+        }
     }
 
     // get values & output all sgfs
-    auto network_output = az_network->forward();
-    std::ofstream fout("visualizer/index.html");
-    fout << "<!DOCTYPE HTML><html><head><meta charset=\"utf-8\"><title>WGo</title><script type=\"text/javascript\" src=\"wgo.js/wgo/wgo.js\"></script><script type=\"text/javascript\" src=\"wgo.js/wgo/kifu.js\"></script><script type=\"text/javascript\" src=\"wgo.js/wgo/sgfparser.js\"></script><script type=\"text/javascript\" src=\"wgo.js/wgo/player.js\"></script><script type=\"text/javascript\" src=\"wgo.js/wgo/basicplayer.js\"></script><script type=\"text/javascript\" src=\"wgo.js/wgo/basicplayer.component.js\"></script><script type=\"text/javascript\" src=\"wgo.js/wgo/basicplayer.infobox.js\"></script><script type=\"text/javascript\" src=\"wgo.js/wgo/basicplayer.commentbox.js\"></script><script type=\"text/javascript\" src=\"wgo.js/wgo/basicplayer.control.js\"></script><link rel=\"stylesheet\" type=\"text/css\" href=\"wgo.js/wgo/wgo.player.css\" /></head><body><div style=\"display: flex; flex-wrap: wrap; width: 100%;\">";
-    float postive_value = std::static_pointer_cast<AlphaZeroNetworkOutput>(network_output[0])->value_;
+    std::ostringstream board_oss, value_oss;
     for (size_t i = 0; i < sgf_outputs.size(); ++i) {
-        fout << sgf_outputs[i] << std::endl;
-
-        // output values
-        if (i % 10 != 9 && i != sgf_outputs.size() - 1) { continue; }
-        for (size_t j = i - i % 10; j <= i && j < sgf_outputs.size(); ++j) {
-            fout << "<div style=\"width: 10%; margin: 0; text-align: center;\">"
-                 << std::fixed << std::setprecision(3)
-                 << std::static_pointer_cast<AlphaZeroNetworkOutput>(network_output[j])->value_
-                 << "(" << std::static_pointer_cast<AlphaZeroNetworkOutput>(network_output[j])->value_ - postive_value << ")"
-                 << " (" << dis[i] << ")"
-                 << "</div>" << std::endl;
+        std::string prob_per_steps;
+        for (size_t j = 0; j < prob_outputs_per_step[i].size(); ++j) {
+            std::stringstream stream;
+            stream << std::fixed << std::setprecision(3) << prob_outputs_per_step[i][j];
+            prob_per_steps += (j == 0 ? "" : ", ") + stream.str();
         }
+        board_oss << "\"" << sgf_outputs[i] << "\"," << std::endl;
+        value_oss << "\"" << std::fixed << std::setprecision(6)
+                  << i << ": "
+                  << prob_outputs[i]
+                  << " (per step: [" << prob_per_steps << "])"
+                  << "\"," << std::endl;
     }
-    fout << "</body></html>";
+
+    // read template html
+    std::ifstream html_fin("visualizer/template.html");
+    std::string line, template_html;
+    while (std::getline(html_fin, line)) { template_html += line + "\n"; }
+    html_fin.close();
+
+    // replace template strings and output index.html
+    template_html = template_html.replace(template_html.find("GAME_ID"), std::string("GAME_ID").length(), std::to_string(config::siamese_game_id));
+    template_html = template_html.replace(template_html.find("STEP_ID"), std::string("STEP_ID").length(), std::to_string(config::siamese_game_step));
+    template_html = template_html.replace(template_html.find("TOTAL_GAMES"), std::string("TOTAL_GAMES").length(), std::to_string(std::max(0, static_cast<int>(sgf_outputs.size()) - 1)));
+    template_html = template_html.replace(template_html.find("COMMENT"), std::string("COMMENT").length(), (true_board_id == 0 ? "" : "True board at #" + std::to_string(true_board_id)));
+    template_html = template_html.replace(template_html.find("BOARD_STR"), std::string("BOARD_STR").length(), board_oss.str());
+    template_html = template_html.replace(template_html.find("VALUE_STR"), std::string("VALUE_STR").length(), value_oss.str());
+    std::ofstream fout("visualizer/index.html");
+    fout << template_html;
     fout.close();
 }
 

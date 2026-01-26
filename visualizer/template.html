@@ -1,0 +1,81 @@
+<!DOCTYPE HTML>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <title>WGo</title>
+    <script type="text/javascript" src="wgo.js/wgo/wgo.js"></script>
+    <script type="text/javascript" src="wgo.js/wgo/kifu.js"></script>
+    <script type="text/javascript" src="wgo.js/wgo/sgfparser.js"></script>
+    <script type="text/javascript" src="wgo.js/wgo/player.js"></script>
+    <script type="text/javascript" src="wgo.js/wgo/basicplayer.js"></script>
+    <script type="text/javascript" src="wgo.js/wgo/basicplayer.component.js"></script>
+    <script type="text/javascript" src="wgo.js/wgo/basicplayer.infobox.js"></script>
+    <script type="text/javascript" src="wgo.js/wgo/basicplayer.commentbox.js"></script>
+    <script type="text/javascript" src="wgo.js/wgo/basicplayer.control.js"></script>
+    <link rel="stylesheet" type="text/css" href="wgo.js/wgo/wgo.player.css" />
+    <style>
+        .control-panel {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            background: #f8f9fa;
+            padding: 15px;
+            z-index: 1000;
+            border-bottom: 1px solid #ddd;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        body {
+            padding-top: 80px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="control-panel">
+        <label>遊戲編號：GAME_ID 遊戲步數：STEP_ID 顯示範圍：第</label>
+        <input type="number" id="start-idx" value="1" step="10" min="0" style="width: 60px;">
+        <label>盤 至 第</label>
+        <input type="number" id="end-idx" value="20" step="10" min="10" style="width: 60px;">
+        <label>盤 (Information Set Size = TOTAL_GAMES 盤; COMMENT)</label>
+        <button onclick="updateDisplay()">更新顯示</button>
+        <span id="status" style="color: blue; margin-left: 10px;"></span>
+    </div>
+
+    <div id="board-container" style="display: flex; flex-wrap: wrap; width: 100%;">
+        <script>
+            const boards = [BOARD_STR]
+            const value = [VALUE_STR]
+
+            function updateDisplay() {
+                var startGame = parseInt(document.getElementById("start-idx").value);
+                var endGame = parseInt(document.getElementById("end-idx").value);
+                var container = document.getElementById("board-container");
+
+                container.innerHTML = "";
+                for (var i = 0; i <= endGame - startGame + 1; i += 10) {
+                    for (var j = i; j < i + 10; j++) { container.innerHTML += "<div id=\"board" + j + "\" style=\"width: 10%; margin: 0\"></div>"; }
+                    for (var j = i; j < i + 10; j++) { container.innerHTML += "<div id=\"value" + j + "\" style=\"width: 10%; margin: 0\"></div>"; }
+                }
+
+                var player = new WGo.BasicPlayer(document.getElementById("board0"), { sgf: boards[0], move: 100, layout: "" });
+                document.getElementById("value0").innerHTML = value[0];
+                var counter = 1;
+                for (var i = startGame; i <= endGame; i++) {
+                    if (i < 1 || i > boards.length - 1) { continue; }
+                    var player = new WGo.BasicPlayer(document.getElementById("board" + String(counter)), { sgf: boards[i], move: 100, layout: "" });
+                    document.getElementById("value" + String(counter)).innerHTML = value[i];
+                    counter += 1;
+                }
+
+                document.getElementById("status").innerText = "目前顯示: 第 " + (targetStartRow * 10) + " - " + (targetEndRow * 10) + " 盤";
+            }
+            window.onload = function () { setTimeout(updateDisplay, 100); };
+        </script>
+</body>
+
+</html>

@@ -13,6 +13,7 @@ __pycache__
 *_sz_*/
 *-siamese-*/
 *_siamese_*/
+*_info_set_generator_*/
 
 # sgf files
 *.sgf
@@ -23,4 +24,3 @@ sgf/
 .container_root
 *.png
 *.csv
-*.html

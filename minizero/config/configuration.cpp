@@ -75,7 +75,7 @@ int nn_snapshot_interval = 1000;
 // siamese parameters
 std::string siamese_nn_type_name = "siamese";
 std::string siamese_nn_file_name = "";
-int siamese_nn_feature_channels = 4;
+int siamese_nn_feature_channels = 28;
 int siamese_nn_embedding_size = 512;
 std::string siamese_train_sgf_file_name = "";
 std::string siamese_eval_sgf_file_name = "";
