@@ -72,27 +72,26 @@ std::string nn_type_name = "alphazero";
 int num_networks_per_GPU = 1;
 int nn_snapshot_interval = 1000;
 
-// siamese parameters
-std::string siamese_nn_type_name = "siamese";
-std::string siamese_nn_file_name = "";
-int siamese_nn_feature_channels = 28;
-int siamese_nn_embedding_size = 512;
-std::string siamese_train_sgf_file_name = "";
-std::string siamese_eval_sgf_file_name = "";
-int siamese_eval_num_negatives = 100;
-std::string siamese_sampling_strategy = "move_by_policy";
-bool siamese_debug_output = false;
-int siamese_max_move_distance = 0;
-float siamese_value_threshold = 0.1f;
-int siamese_max_num_negatives = 1000;
-bool siamese_generator_statistic = false;
-bool siamese_generator_verification = false;
-std::string siamese_generator_input_sgf = "";
-std::string siamese_generator_output_sgf = "";
-float siamese_generator_policy_threshold = 0.1f;
-std::string siamese_visualizer_input_sgf = "";
-int siamese_game_id = 0;
-int siamese_game_step = 0;
+// IIG parameters
+std::string iig_nn_type_name = "siamese";
+std::string iig_nn_file_name = "";
+int iig_nn_feature_channels = 28;
+int iig_nn_embedding_size = 512;
+std::string iig_train_sgf_file_name = "";
+std::string iig_eval_sgf_file_name = "";
+std::string iig_sampling_strategy = "move_by_policy";
+bool iig_debug_output = false;
+int iig_max_move_distance = 0;
+float iig_value_threshold = 0.1f;
+int iig_max_infoset_size = 1000;
+bool iig_generator_statistic = false;
+bool iig_generator_verification = false;
+std::string iig_generator_input_sgf = "";
+std::string iig_generator_output_sgf = "";
+float iig_generator_policy_threshold = 0.1f;
+std::string iig_visualizer_input_sgf = "";
+int iig_game_id = 0;
+int iig_game_step = 0;
 
 // environment parameters
 int env_board_size = 0;
@@ -181,27 +180,26 @@ void setConfiguration(ConfigureLoader& cl)
     cl.addParameter("num_networks_per_GPU", num_networks_per_GPU, "the number of networks to be loaded on each GPU", "Network");
     cl.addParameter("nn_snapshot_interval", nn_snapshot_interval, "the interval (in training steps) to save snapshot of the neural network during training; 0 means disabling snapshot", "Network");
 
-    // siamese parameters
-    cl.addParameter("siamese_nn_type_name", siamese_nn_type_name, "the type of the siamese network architecture: siamese/binary_cnn", "Siamese");
-    cl.addParameter("siamese_nn_file_name", siamese_nn_file_name, "the file name of siamese network model weights", "Siamese");
-    cl.addParameter("siamese_nn_feature_channels", siamese_nn_feature_channels, "the number of feature channels for the network input", "Siamese");
-    cl.addParameter("siamese_nn_embedding_size", siamese_nn_embedding_size, "the size of the output embedding vector", "Siamese");
-    cl.addParameter("siamese_train_sgf_file_name", siamese_train_sgf_file_name, "the training sgf file name (replace --link_sgf)", "Siamese");
-    cl.addParameter("siamese_eval_sgf_file_name", siamese_eval_sgf_file_name, "the testing sgf file name", "Siamese");
-    cl.addParameter("siamese_eval_num_negatives", siamese_eval_num_negatives, "the number of negative boards returned per (anchor, positive) during evaluation/testing", "Siamese");
-    cl.addParameter("siamese_sampling_strategy", siamese_sampling_strategy, "the sampling (generating) strategy for negative boards: random_move_piece/filter_by_value/move_by_policy", "Siamese");
-    cl.addParameter("siamese_debug_output", siamese_debug_output, "whether to print debug board visualization output", "Siamese");
-    cl.addParameter("siamese_max_move_distance", siamese_max_move_distance, "the maximum Manhattan distance for moving stones", "Siamese");
-    cl.addParameter("siamese_value_threshold", siamese_value_threshold, "the threshold to filter possible negative boards by value", "Siamese");
-    cl.addParameter("siamese_max_num_negatives", siamese_max_num_negatives, "the max number of generating negative samples (selecting stones to move/move by policy)", "Siamese");
-    cl.addParameter("siamese_generator_statistic", siamese_generator_statistic, "true for output statistics info during generating negative boards", "Siamese");
-    cl.addParameter("siamese_generator_verification", siamese_generator_verification, "true for verifying the generated negative boards", "Siamese");
-    cl.addParameter("siamese_generator_input_sgf", siamese_generator_input_sgf, "for generate dataset, the input sgf file name (minizero sp data)", "Siamese");
-    cl.addParameter("siamese_generator_output_sgf", siamese_generator_output_sgf, "the output sgf file name for generator", "Siamese");
-    cl.addParameter("siamese_generator_policy_threshold", siamese_generator_policy_threshold, "actions with policy probability below this value will be pruned", "Siamese");
-    cl.addParameter("siamese_visualizer_input_sgf", siamese_visualizer_input_sgf, "the input sgf file for web visualize tool", "Siamese");
-    cl.addParameter("siamese_game_id", siamese_game_id, "the game id for transforming sgf", "Siamese");
-    cl.addParameter("siamese_game_step", siamese_game_step, "the game step for transforming sgf", "Siamese");
+    // IIG parameters
+    cl.addParameter("iig_nn_type_name", iig_nn_type_name, "the type of the IIG network architecture: siamese/binary_cnn/info_set_generator", "IIG");
+    cl.addParameter("iig_nn_file_name", iig_nn_file_name, "the file name of IIG network model weights", "IIG");
+    cl.addParameter("iig_nn_feature_channels", iig_nn_feature_channels, "the number of feature channels for the network input", "IIG");
+    cl.addParameter("iig_nn_embedding_size", iig_nn_embedding_size, "the size of the output embedding vector", "IIG");
+    cl.addParameter("iig_train_sgf_file_name", iig_train_sgf_file_name, "the training sgf file name (replace --link_sgf)", "IIG");
+    cl.addParameter("iig_eval_sgf_file_name", iig_eval_sgf_file_name, "the testing sgf file name", "IIG");
+    cl.addParameter("iig_sampling_strategy", iig_sampling_strategy, "the sampling (generating) strategy for negative boards: random_move_piece/filter_by_value/move_by_policy", "IIG");
+    cl.addParameter("iig_debug_output", iig_debug_output, "whether to print debug board visualization output", "IIG");
+    cl.addParameter("iig_max_move_distance", iig_max_move_distance, "the maximum Manhattan distance for moving stones", "IIG");
+    cl.addParameter("iig_value_threshold", iig_value_threshold, "the threshold to filter possible negative boards by value", "IIG");
+    cl.addParameter("iig_max_infoset_size", iig_max_infoset_size, "the max number of generating negative samples (selecting stones to move/move by policy)", "IIG");
+    cl.addParameter("iig_generator_statistic", iig_generator_statistic, "true for output statistics info during generating negative boards", "IIG");
+    cl.addParameter("iig_generator_verification", iig_generator_verification, "true for verifying the generated negative boards", "IIG");
+    cl.addParameter("iig_generator_input_sgf", iig_generator_input_sgf, "for generate dataset, the input sgf file name (minizero sp data)", "IIG");
+    cl.addParameter("iig_generator_output_sgf", iig_generator_output_sgf, "the output sgf file name for generator", "IIG");
+    cl.addParameter("iig_generator_policy_threshold", iig_generator_policy_threshold, "actions with policy probability below this value will be pruned", "IIG");
+    cl.addParameter("iig_visualizer_input_sgf", iig_visualizer_input_sgf, "the input sgf file for web visualize tool", "IIG");
+    cl.addParameter("iig_game_id", iig_game_id, "the game id for transforming sgf", "IIG");
+    cl.addParameter("iig_game_step", iig_game_step, "the game step for transforming sgf", "IIG");
 
     // environment parameters
     cl.addParameter("env_board_size", env_board_size, "the size of board", "Environment");

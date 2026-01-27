@@ -15,7 +15,7 @@
 #include <random>
 #include <torch/cuda.h>
 
-namespace minizero::iig_data_generator {
+namespace minizero::iig {
 
 using namespace network;
 using namespace utils;
@@ -33,7 +33,7 @@ std::vector<std::shared_ptr<NetworkOutput>> EvaluatorSharedData::gpuForward(int 
     if (networks_[nn_id]->getNetworkTypeName() == "siamese") {
         std::shared_ptr<SiameseNetwork> siamese_network = std::static_pointer_cast<SiameseNetwork>(networks_[nn_id]);
         for (auto& feature : features) {
-            if (feature.size() > config::siamese_nn_feature_channels * config::env_board_size * config::env_board_size) {
+            if (static_cast<int>(feature.size()) > config::iig_nn_feature_channels * config::env_board_size * config::env_board_size) {
                 siamese_network->pushBackAnchor(feature);
             } else {
                 siamese_network->pushBackBoard(feature);
@@ -80,7 +80,7 @@ void EvaluatorThread::runJob()
         } else if (getSharedData()->networks_[0]->getNetworkTypeName() == "info_set_generator") {
             evaluateInfoSetGenerator(getSharedData()->sgfs_[game_index]);
         } else {
-            std::cerr << "Unknown network type from siamese_nn_file_name: " << getSharedData()->networks_[0]->getNetworkTypeName() << std::endl;
+            std::cerr << "Unknown network type from iig_nn_file_name: " << getSharedData()->networks_[0]->getNetworkTypeName() << std::endl;
             is_done_ = true;
             return;
         }
@@ -94,7 +94,6 @@ void EvaluatorThread::evaluateSiamese(const std::string& sgf)
 
     std::vector<std::vector<float>> anchors, positives;
     for (size_t pos = 0; pos < env_loader.getActionPairs().size(); ++pos) {
-        // TODO: support random rotation?
         std::vector<float> anchor = env_loader.getAnchor(pos, utils::Rotation::kRotationNone);
         anchors.push_back(anchor);
         std::vector<float> positive = env_loader.getPositive(pos, utils::Rotation::kRotationNone);
@@ -106,7 +105,6 @@ void EvaluatorThread::evaluateSiamese(const std::string& sgf)
     for (size_t pos = 0; pos < env_loader.getActionPairs().size(); ++pos) {
         int num_negatives = std::stoi(env_loader.getActionPairs()[pos].second["N"]);
         if (num_negatives == 0) { continue; }
-
         std::vector<std::vector<float>> negatives;
         for (int neg_id = 0; neg_id < num_negatives; ++neg_id) {
             std::vector<float> negative = env_loader.getNegative(pos, utils::Rotation::kRotationNone, neg_id);
@@ -150,13 +148,12 @@ void EvaluatorThread::evaluateInfoSetGenerator(const std::string& sgf)
         Rotation rotation = config::actor_use_random_rotation_features ? static_cast<Rotation>(Random::randInt() % static_cast<int>(Rotation::kRotateSize)) : Rotation::kRotationNone;
         Environment env;
         for (int i = 0; i < pos; ++i) { env.act(env_loader.getActionPairs()[i].first); }
+
         int move_number = (pos % 2 == 0 ? 1 : 0);
-        float correct_prob = 1.0f; // product of all opponent moves' predictions
         float min_prob = 1.0f;
         std::vector<std::vector<float>> features;
         while (move_number < pos) {
             features.push_back(env.getInfoSetGeneratorFeatures(move_number, rotation));
-
             move_number += 2;
         }
         auto res = getSharedData()->gpuForward(id_ % getSharedData()->networks_.size(), features);
@@ -208,9 +205,9 @@ void Evaluator::initialize()
 
     // load games
     std::cerr << "Load games ..." << std::endl;
-    std::ifstream fin(config::siamese_eval_sgf_file_name);
+    std::ifstream fin(config::iig_eval_sgf_file_name);
     if (!fin.is_open()) {
-        std::cerr << "Failed to open file: " << config::siamese_eval_sgf_file_name << std::endl;
+        std::cerr << "Failed to open file: " << config::iig_eval_sgf_file_name << std::endl;
         exit(-1);
     }
     getSharedData()->sgfs_.clear();
@@ -229,6 +226,7 @@ void Evaluator::summarize()
 {
     std::cerr << "Average rank: " << static_cast<float>(getSharedData()->avg_rank_) / getSharedData()->total_steps_ << std::endl;
     std::cerr << "Possibility of rank 1: " << static_cast<float>(getSharedData()->rank_one_) / getSharedData()->total_steps_ << std::endl;
+
     float total = getSharedData()->totals_;
     std::cerr << "guess correct vs infoset size (for " << total << " samples)" << std::endl;
     std::ofstream outfile("evaluation_result.csv");
@@ -259,8 +257,8 @@ void Evaluator::createNeuralNetworks()
     getSharedData()->networks_.resize(num_networks_per_GPU * num_networks);
     for (int gpu_id = 0; gpu_id < num_networks_per_GPU * num_networks; ++gpu_id) {
         getSharedData()->nn_mutexs_.push_back(std::make_shared<std::mutex>());
-        getSharedData()->networks_[gpu_id] = createNetwork(config::siamese_nn_file_name, gpu_id % num_networks);
+        getSharedData()->networks_[gpu_id] = createNetwork(config::iig_nn_file_name, gpu_id % num_networks);
     }
 }
 
-} // namespace minizero::iig_data_generator
+} // namespace minizero::iig

@@ -3,32 +3,32 @@
 ## Training data
 ### Generate from Go model self-play
 * `./build/go/minizero_go -mode run -conf_file go.cfg`
-  * siamese_generator_input_sgf = sp data (.sgf)
+  * iig_generator_input_sgf = sp data (.sgf)
     * Need to add tag I for game ID first
   * nn_file_name = Go model weight
-  * siamese_sampling_strategy
+  * iig_sampling_strategy
     * filter_by_value: Add selected negative boards' ID to sgf (tag N)
     * move_by_policy: Add selected action to tag A, add number of negatives to tag N
 
 ### Debug & statistic tools
-* siamese_generator_statistic
+* iig_generator_statistic
   * Output statistic data to statistic/
   * `python3 ./tools/plot_statistics.py `
-* siamese_generator_verification
+* iig_generator_verification
 
 ### Visualize training data
 Visualize one positive and all negative boards by given specific game id and step (display each board and its value on website)
 * Use [WGo.js tool](https://wgo.waltheri.net/)
 * Output standard sgf format -> `visualizer/index.html` -> WGo tool
 * `./build/go/minizero_go -mode visualize_sgf -conf_file go.cfg`
-  * `siamese_visualizer_input_sgf` for pre-generated training dataset
-  * `siamese_game_id` for tag I[...]
-  * `siamese_game_step`
+  * `iig_visualizer_input_sgf` for pre-generated training dataset
+  * `iig_game_id` for tag I[...]
+  * `iig_game_step`
 * `./visualizer/run_web.sh`
 
 ## Train siamese/info set generator
 * Start a container first: `./scripts/start-container.sh`
-  * `siamese_nn_feature_channels`
+  * `iig_nn_feature_channels`
     * 4 for positive/negative board (siamese)
     * 28 for info set generator
 ### train.sh
@@ -49,7 +49,7 @@ Visualize one positive and all negative boards by given specific game id and ste
 ## Evaluate
 * Run modehandler
   * `./build/go/minizero_go -conf_file [conf_file] -mode evaluator -conf_str [optional]`
-  * Example: `./build/go/minizero_go -conf_file go.cfg -mode evaluator -conf_str siamese_nn_file_name=go_9x9_siamese_1bx256_k5000-b4d1da-dirty/model/weight_iter_10000.pt:siamese_eval_sgf_file_name=test.sgf`
+  * Example: `./build/go/minizero_go -conf_file go.cfg -mode evaluator -conf_str iig_nn_file_name=go_9x9_siamese_1bx256_k5000-b4d1da-dirty/model/weight_iter_10000.pt:iig_eval_sgf_file_name=test.sgf`
 
 * Output: `{training_dir}/eval_analysis/`
   * `eval.log` - per-sample metrics (step, margin, success)

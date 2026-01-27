@@ -56,6 +56,7 @@ public:
     inline int getNumInputChannels() const override { return 18; }
     inline int getPolicySize() const override { return getBoardSize() * getBoardSize() + 1; }
     std::string toString() const override;
+    std::string toSGFString() const;
     GoBitboard dilateBitboard(const GoBitboard& bitboard) const;
 
     inline std::string name() const override { return kGoName + "_" + std::to_string(getBoardSize()) + "x" + std::to_string(getBoardSize()); }

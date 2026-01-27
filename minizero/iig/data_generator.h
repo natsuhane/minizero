@@ -12,7 +12,7 @@
 #include <utility>
 #include <vector>
 
-namespace minizero::iig_data_generator {
+namespace minizero::iig {
 
 class ThreadSharedData : public utils::BaseSharedData {
 public:
@@ -24,8 +24,6 @@ public:
     void writeValueHistogramCSV(const std::string& path);
     void addValueDiff(float v, minizero::env::Player player);
     void writeValueDiffHistogramCSV(const std::string& path);
-    void addNumNegPerStep(int step);
-    void WriteNumNegPerStepHistogramCSV(const std::string& path);
     void addNumPos(float v, minizero::env::Player player);
     void writePosHistogramCSV(const std::string& path);
 
@@ -86,9 +84,9 @@ private:
     bool is_done_;
 };
 
-class IIGDataGenerator : public utils::BaseParalleler {
+class DataGenerator : public utils::BaseParalleler {
 public:
-    IIGDataGenerator() {}
+    DataGenerator() {}
 
     void initialize() override;
     void summarize() override;
@@ -101,4 +99,4 @@ private:
     inline std::shared_ptr<ThreadSharedData> getSharedData() { return std::static_pointer_cast<ThreadSharedData>(shared_data_); }
 };
 
-} // namespace minizero::iig_data_generator
+} // namespace minizero::iig

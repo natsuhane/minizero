@@ -1,4 +1,4 @@
-#include "iig_data_generator.h"
+#include "data_generator.h"
 #include "alphazero_network.h"
 #include "configuration.h"
 #include "create_network.h"
@@ -11,7 +11,7 @@
 #include <torch/cuda.h>
 #include <utility>
 
-namespace minizero::iig_data_generator {
+namespace minizero::iig {
 
 using namespace network;
 
@@ -229,31 +229,31 @@ void SlaveThread::genNegativeByPolicy(EnvironmentLoader& env_loader)
                 Environment env_copy = env_with_actions.env;
                 env_copy.act(action_pair.first);
                 next_info_set_envs.push_back(EnvWithLegalActions(env_copy, {}));
-                if (config::siamese_generator_verification) {
+                if (config::iig_generator_verification) {
                     EnvironmentLoader verify_env_loader;
                     verify_env_loader.loadFromEnvironment(env_copy);
                     verification_sgfs[pos].push_back(verify_env_loader.toString());
                 }
                 oss << utils::SGFLoader::actionIDToSGFString(action_pair.first.getActionID(), env_copy.getBoardSize());
-                if (static_cast<int>(next_info_set_envs.size()) >= config::siamese_max_num_negatives) { break; }
+                if (static_cast<int>(next_info_set_envs.size()) >= config::iig_max_infoset_size) { break; }
             }
-            if (static_cast<int>(next_info_set_envs.size()) >= config::siamese_max_num_negatives) { break; }
+            if (static_cast<int>(next_info_set_envs.size()) >= config::iig_max_infoset_size) { break; }
             if (i != info_set_envs.get(next_turn).size() - 1) { oss << ";"; }
         }
         env_loader.getActionPairs()[pos].second["A"] = oss.str();
         env_loader.getActionPairs()[pos].second["N"] = std::to_string(next_info_set_envs.size());
         if (next_info_set_envs.empty()) { next_info_set_envs.push_back(EnvWithLegalActions(true_env, {})); }
-        if (config::siamese_generator_statistic) { statistic(true_env, next_info_set_envs, next_turn); }
+        if (config::iig_generator_statistic) { statistic(true_env, next_info_set_envs, next_turn); }
         info_set_envs.get(next_turn) = next_info_set_envs;
     }
 
     getSharedData()->outputGames(env_loader.toString());
-    if (config::siamese_generator_verification) { verification(env_loader, verification_sgfs); }
+    if (config::iig_generator_verification) { verification(env_loader, verification_sgfs); }
 }
 
 void SlaveThread::assignLegalActionProbabilities(std::vector<EnvWithLegalActions>& info_set_envs, const std::vector<std::shared_ptr<NetworkOutput>>& nn_outputs)
 {
-    const float kPolicyThreshold = config::siamese_generator_policy_threshold;
+    const float kPolicyThreshold = config::iig_generator_policy_threshold;
     for (size_t i = 0; i < info_set_envs.size(); ++i) {
         EnvWithLegalActions& env_with_actions = info_set_envs[i];
         if (!env_with_actions.is_valid) { continue; }
@@ -329,7 +329,7 @@ std::string SlaveThread::idtoString(const std::vector<int>& neg_ids)
     return oss.str();
 }
 
-void IIGDataGenerator::initialize()
+void DataGenerator::initialize()
 {
     int num_threads = std::max(static_cast<int>(torch::cuda::device_count()), config::zero_num_threads);
     std::cerr << "Create threads ..." << std::endl;
@@ -339,25 +339,25 @@ void IIGDataGenerator::initialize()
 
     // load games
     std::cerr << "Load games ..." << std::endl;
-    std::ifstream fin(config::siamese_generator_input_sgf);
+    std::ifstream fin(config::iig_generator_input_sgf);
     if (!fin.is_open()) {
-        std::cerr << "Failed to open file: " << config::siamese_generator_input_sgf << std::endl;
+        std::cerr << "Failed to open file: " << config::iig_generator_input_sgf << std::endl;
         exit(-1);
     }
     getSharedData()->sgfs_.clear();
     for (std::string sgf; std::getline(fin, sgf);) { getSharedData()->sgfs_.push_back(sgf); }
 
     // output file
-    getSharedData()->fout_.open(config::siamese_generator_output_sgf, std::ios::out);
+    getSharedData()->fout_.open(config::iig_generator_output_sgf, std::ios::out);
 
     std::cerr << "Finish initializing" << std::endl;
 }
 
-void IIGDataGenerator::summarize()
+void DataGenerator::summarize()
 {
-    std::cerr << "Output generated data to " << config::siamese_generator_output_sgf << std::endl;
+    std::cerr << "Output generated data to " << config::iig_generator_output_sgf << std::endl;
 
-    if (config::siamese_generator_statistic == false) { return; }
+    if (config::iig_generator_statistic == false) { return; }
     const std::filesystem::path stat_path("statistic");
     if (!std::filesystem::exists(stat_path)) { std::filesystem::create_directory(stat_path); }
 
@@ -377,7 +377,7 @@ void IIGDataGenerator::summarize()
     std::cerr << "pos histogram csv saved to: " << pos_csv_path << std::endl;
 }
 
-void IIGDataGenerator::createNeuralNetworks()
+void DataGenerator::createNeuralNetworks()
 {
     int num_networks = std::min(static_cast<int>(torch::cuda::device_count()), config::zero_num_parallel_games);
     const int num_networks_per_GPU = config::num_networks_per_GPU;
@@ -389,4 +389,4 @@ void IIGDataGenerator::createNeuralNetworks()
     }
 }
 
-} // namespace minizero::iig_data_generator
+} // namespace minizero::iig

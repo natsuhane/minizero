@@ -3,9 +3,11 @@
 #include "alphazero_network.h"
 #include "console.h"
 #include "create_network.h"
+#include "data_generator.h"
 #include "evaluator.h"
 #include "git_info.h"
-#include "iig_data_generator.h"
+#include "data_generator.h"
+#include "info_set_generator.h"
 #include "info_set_generator_network.h"
 #include "obs_recover.h"
 #include "obs_remover.h"
@@ -173,12 +175,12 @@ void ModeHandler::runZeroServer()
 
 void ModeHandler::runZeroTrainingName()
 {
-    std::cout << Environment().name()                      // name for environment
-              << "_" << config::nn_type_name               // network & training algorithm
-              << "_" << config::nn_num_blocks << "b"       // number of blocks
-              << "x" << config::nn_num_hidden_channels     // number of hidden channels
-              << "_k" << config::siamese_max_num_negatives // siamese max random perturbations
-              << "-" << GIT_SHORT_HASH << std::endl;       // git hash info
+    std::cout << Environment().name()                  // name for environment
+              << "_" << config::nn_type_name           // network & training algorithm
+              << "_" << config::nn_num_blocks << "b"   // number of blocks
+              << "x" << config::nn_num_hidden_channels // number of hidden channels
+              << "_k" << config::iig_max_infoset_size  // siamese max random perturbations
+              << "-" << GIT_SHORT_HASH << std::endl;   // git hash info
 }
 
 void ModeHandler::runEnvTest()
@@ -223,7 +225,7 @@ void ModeHandler::runRecoverObs()
 
 void ModeHandler::runDataSet()
 {
-    iig_data_generator::IIGDataGenerator data_generator;
+    iig::DataGenerator data_generator;
     data_generator.run();
     return;
 }
@@ -239,101 +241,35 @@ void ModeHandler::runVisualizeSgf()
 {
     // find target game by id
     EnvironmentLoader env_loader;
-    int target_game_id = config::siamese_game_id;
-    std::ifstream fin(config::siamese_visualizer_input_sgf);
+    int target_game_id = config::iig_game_id;
+    std::ifstream fin(config::iig_visualizer_input_sgf);
     std::cerr << "Searching for game id " << target_game_id << std::endl;
     for (std::string sgf; std::getline(fin, sgf);) {
         if (!env_loader.loadFromString(sgf) || std::stoi(env_loader.getTag("I")) != target_game_id) { continue; }
         break;
     }
 
-    // positive sgf
     Environment true_env;
-    std::string positive_sgf;
     std::vector<std::string> sgf_outputs;
     std::vector<float> prob_outputs;
     std::vector<std::vector<float>> prob_outputs_per_step;
-    int target_game_step = config::siamese_game_step;
 
-    const std::string sgf_prefix = "(;FF[4]GM[1]SZ[9]KM[7.000000]";
-    const std::string sgf_suffix = ")";
-    std::cerr << "Loaded environment up to step " << target_game_step << std::endl;
-    for (int pos = 0; pos < target_game_step; ++pos) {
-        true_env.act(env_loader.getActionPairs()[pos].first);
-        positive_sgf += ";" +
-                        std::string(1, env::playerToChar(env_loader.getActionPairs()[pos].first.getPlayer())) +
-                        "[" +
-                        utils::SGFLoader::actionIDToSGFString(env_loader.getActionPairs()[pos].first.getActionID(), env_loader.getBoardSize()) +
-                        "]";
-    }
-    sgf_outputs.push_back(sgf_prefix + positive_sgf + sgf_suffix);
+    // true board
+    std::cerr << "Loaded environment up to step " << config::iig_game_step << std::endl;
+    for (int pos = 0; pos < config::iig_game_step; ++pos) { true_env.act(env_loader.getActionPairs()[pos].first); }
+    sgf_outputs.push_back(true_env.toSGFString());
     prob_outputs.push_back(0.0f);
     prob_outputs_per_step.push_back(std::vector<float>());
-    // negative sgfs
-    std::shared_ptr<InfoSetGeneratorNetwork> is_network = std::static_pointer_cast<InfoSetGeneratorNetwork>(createNetwork(config::siamese_nn_file_name, 0));
-    std::priority_queue<ISQueueItem, std::vector<ISQueueItem>, std::function<bool(const ISQueueItem&, const ISQueueItem&)>> queue(
-        [](const ISQueueItem& a, const ISQueueItem& b) { return a.acc_prob_ < b.acc_prob_; });
-    // std::queue<ISQueueItem> queue;
-    queue.push({Environment(), 1.0f, {}});
+
+    // info set
+    iig::InfoSetGenerator is_generator(createNetwork(config::iig_nn_file_name, 0));
+    std::vector<iig::ISItem> info_set = is_generator.generate(true_env);
     int true_board_id = 0;
-    while (!queue.empty() && static_cast<int>(sgf_outputs.size()) <= config::siamese_max_num_negatives) {
-        auto current = queue.top();
-        // auto current = queue.front();
-        queue.pop();
-        float acc_prob = current.acc_prob_;
-
-        // output sgf
-        if (current.env_.getActionHistory().size() == true_env.getActionHistory().size()) {
-            // check consistency of our pieces
-            if (current.env_.getStoneBitboard().get(true_env.getTurn()) != true_env.getStoneBitboard().get(true_env.getTurn())) { continue; }
-            std::string negative_sgf;
-            for (const auto& action : current.env_.getActionHistory()) {
-                negative_sgf += ";" +
-                                std::string(1, env::playerToChar(action.getPlayer())) +
-                                "[" +
-                                utils::SGFLoader::actionIDToSGFString(action.getActionID(), current.env_.getBoardSize()) +
-                                "]";
-            }
-            sgf_outputs.push_back(sgf_prefix + negative_sgf + sgf_suffix);
+    for (const auto& item : info_set) {
+        sgf_outputs.push_back(item.env_.toSGFString());
             if (sgf_outputs.back() == sgf_outputs[0]) { true_board_id = sgf_outputs.size() - 1; }
-            prob_outputs.push_back(acc_prob);
-            prob_outputs_per_step.push_back(current.probs_);
-            continue;
-        }
-
-        // if our turn, play true action until reach opponent turn
-        while (current.env_.getTurn() == true_env.getTurn()) {
-            const Action& action = true_env.getActionHistory()[current.env_.getActionHistory().size()];
-            if (!current.env_.isLegalAction(action)) { break; }
-            current.env_.act(action);
-        }
-        if (current.env_.getTurn() == true_env.getTurn()) { continue; } // if still our turn, skip this case (only happens if true action is illegal)
-
-        // create fake environment by playing pass moves for opponent to get features
-        Environment fake_env = current.env_;
-        for (size_t move = current.env_.getActionHistory().size(); move < true_env.getActionHistory().size(); ++move) {
-            Action action = ((fake_env.getTurn() == true_env.getTurn())
-                                 ? true_env.getActionHistory()[move]
-                                 : Action(true_env.getBoardSize() * true_env.getBoardSize(), fake_env.getTurn())); // if not our turn, play pass
-            fake_env.act(action);
-        }
-
-        std::vector<float> features = fake_env.getInfoSetGeneratorFeatures(current.env_.getActionHistory().size(), Rotation::kRotationNone);
-        is_network->pushBack(features);
-        auto res = is_network->forward();
-        auto policy_output = std::static_pointer_cast<InfoSetGeneratorNetworkOutput>(res[0]);
-
-        for (size_t pos = 0; pos < policy_output->policy_.size(); ++pos) {
-            Action action(pos, current.env_.getTurn());
-            if (!current.env_.isLegalAction(action)) { continue; }
-            Environment next_env = current.env_;
-            next_env.act(action);
-            float p = policy_output->policy_[pos];
-            if (p < config::siamese_generator_policy_threshold) { continue; }
-            std::vector<float> new_probs = current.probs_;
-            new_probs.push_back(p);
-            queue.push({next_env, acc_prob * p, new_probs});
-        }
+        prob_outputs.push_back(item.acc_prob_);
+        prob_outputs_per_step.push_back(item.probs_);
     }
 
     // get values & output all sgfs
@@ -360,8 +296,8 @@ void ModeHandler::runVisualizeSgf()
     html_fin.close();
 
     // replace template strings and output index.html
-    template_html = template_html.replace(template_html.find("GAME_ID"), std::string("GAME_ID").length(), std::to_string(config::siamese_game_id));
-    template_html = template_html.replace(template_html.find("STEP_ID"), std::string("STEP_ID").length(), std::to_string(config::siamese_game_step));
+    template_html = template_html.replace(template_html.find("GAME_ID"), std::string("GAME_ID").length(), std::to_string(config::iig_game_id));
+    template_html = template_html.replace(template_html.find("STEP_ID"), std::string("STEP_ID").length(), std::to_string(config::iig_game_step));
     template_html = template_html.replace(template_html.find("TOTAL_GAMES"), std::string("TOTAL_GAMES").length(), std::to_string(std::max(0, static_cast<int>(sgf_outputs.size()) - 1)));
     template_html = template_html.replace(template_html.find("COMMENT"), std::string("COMMENT").length(), (true_board_id == 0 ? "" : "True board at #" + std::to_string(true_board_id)));
     template_html = template_html.replace(template_html.find("BOARD_STR"), std::string("BOARD_STR").length(), board_oss.str());
@@ -373,7 +309,7 @@ void ModeHandler::runVisualizeSgf()
 
 void ModeHandler::runEvaluator()
 {
-    iig_data_generator::Evaluator evaluator;
+    iig::Evaluator evaluator;
     evaluator.run();
 }
 

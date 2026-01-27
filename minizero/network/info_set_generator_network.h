@@ -44,7 +44,7 @@ public:
 
     int pushBack(std::vector<float> features)
     {
-        const int num_board_input_channels = config::siamese_nn_feature_channels;
+        const int num_board_input_channels = config::iig_nn_feature_channels;
         assert(static_cast<int>(features.size()) == num_board_input_channels * getInputChannelHeight() * getInputChannelWidth());
         assert(batch_size_ < kReserved_batch_size);
 

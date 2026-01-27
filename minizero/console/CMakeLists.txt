@@ -8,7 +8,7 @@ target_link_libraries(
     config
     environment
     network
-    iig_data_generator
+    iig
     utils
     zero
     ${TORCH_LIBRARIES}

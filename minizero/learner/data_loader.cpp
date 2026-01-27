@@ -184,7 +184,7 @@ bool DataLoaderThread::sampleData()
     int batch_index = getSharedData()->getNextBatchIndex();
     if (batch_index >= config::learner_batch_size) { return false; }
 
-    if (config::siamese_nn_type_name == "siamese" || config::siamese_nn_type_name == "binary_cnn") {
+    if (config::iig_nn_type_name == "siamese" || config::iig_nn_type_name == "binary_cnn") {
         setIIGTrainingData(batch_index);
     } else if (config::nn_type_name == "info_set_generator") {
         setInfoSetGeneratorTrainingData(batch_index);
@@ -236,7 +236,7 @@ void DataLoaderThread::setIIGTrainingData(int batch_index)
         std::vector<float> negative = env_loader.getNegative(
             pos,
             rotation,
-            config::siamese_sampling_strategy == "filter_by_value" ? getRandomFromFilteredIds(env_loader.getActionPairs()[pos].second["N"]) : -1);
+            config::iig_sampling_strategy == "filter_by_value" ? getRandomFromFilteredIds(env_loader.getActionPairs()[pos].second["N"]) : -1);
 
         // write data to data_ptr
         std::copy(anchor.begin(), anchor.end(), getSharedData()->getDataPtr()->anchor_ + anchor.size() * batch_index);

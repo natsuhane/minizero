@@ -438,6 +438,18 @@ std::string GoEnv::toString() const
     return oss.str();
 }
 
+std::string GoEnv::toSGFString() const
+{
+    std::ostringstream oss;
+    oss << "(;FF[4]GM[1]SZ[" << board_size_ << "]KM[" << komi_ << "]";
+    for (const auto& action : actions_) {
+        oss << ";" << std::string(1, env::playerToChar(action.getPlayer()))
+            << "[" << SGFLoader::actionIDToSGFString(action.getActionID(), board_size_) + "]";
+    }
+    oss << ")";
+    return oss.str();
+}
+
 GoBitboard GoEnv::dilateBitboard(const GoBitboard& bitboard) const
 {
     return ((bitboard << board_size_) |                           // move up
@@ -1109,18 +1121,18 @@ std::vector<float> GoEnvLoader::getPositive(int pos, utils::Rotation rotation /*
 
 std::vector<float> GoEnvLoader::getNegative(int pos, utils::Rotation rotation /*= utils::Rotation::kRotationNone*/, int index /* = -1*/) const
 {
-    if (config::siamese_sampling_strategy == "random_move_piece" || config::siamese_sampling_strategy == "filter_by_value") {
+    if (config::iig_sampling_strategy == "random_move_piece" || config::iig_sampling_strategy == "filter_by_value") {
         GoEnv env;
         const auto& action_pairs = getActionPairs();
         for (int i = 0; i < pos; ++i) { env.act(action_pairs[i].first); }
 
         // TODO: neg_bitboards can be empty? how to handle?
-        auto neg_bitboards = generateNegativeBitboards(env, (index > 0 ? index : (utils::Random::randInt() % config::siamese_max_num_negatives)), false);
+        auto neg_bitboards = generateNegativeBitboards(env, (index > 0 ? index : (utils::Random::randInt() % config::iig_max_infoset_size)), false);
         if (neg_bitboards.empty()) {
             return {};
         }
         return bitboardToFeature(neg_bitboards[0], env.getTurn(), rotation, false);
-    } else if (config::siamese_sampling_strategy == "move_by_policy") {
+    } else if (config::iig_sampling_strategy == "move_by_policy") {
         int num_negatives = std::stoi(getActionPairs()[pos].second["N"]);
         int negative_id = (num_negatives == 0
                                ? 0
@@ -1196,7 +1208,7 @@ std::vector<env::GamePair<env::go::GoBitboard>> GoEnvLoader::generateNegativeBit
     random_generator.seed(config::program_seed);
     std::uniform_int_distribution<int> int_distribution(0, pos_list.size() - 1);
     const int warmup_times = 100;
-    const int distance = config::siamese_max_move_distance;
+    const int distance = config::iig_max_move_distance;
     for (int k = 0; k < index + warmup_times; k++) {
         int idx = int_distribution(random_generator);
         int pos = pos_list[idx];

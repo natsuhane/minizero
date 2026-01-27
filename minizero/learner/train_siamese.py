@@ -77,7 +77,7 @@ class Model:
 
     def load_model(self, training_dir, model_file):
         self.training_step = 0
-        self.network_type = py.get_siamese_nn_type_name()
+        self.network_type = py.get_iig_nn_type_name()
         anchor_channels = 72
         self.network = create_network(py.get_game_name(),
                                       anchor_channels,  # Use 72 for anchor input channels

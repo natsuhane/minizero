@@ -9,7 +9,7 @@
 #include <string>
 #include <vector>
 
-namespace minizero::iig_data_generator {
+namespace minizero::iig {
 
 class EvaluatorSharedData : public utils::BaseSharedData {
 public:
@@ -64,4 +64,4 @@ private:
     inline std::shared_ptr<EvaluatorSharedData> getSharedData() { return std::static_pointer_cast<EvaluatorSharedData>(shared_data_); }
 };
 
-} // namespace minizero::iig_data_generator
+} // namespace minizero::iig

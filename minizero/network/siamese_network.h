@@ -59,7 +59,7 @@ public:
 
     int pushBackBoard(std::vector<float> features)
     {
-        const int num_board_input_channels = config::siamese_nn_feature_channels;
+        const int num_board_input_channels = config::iig_nn_feature_channels;
         assert(static_cast<int>(features.size()) == num_board_input_channels * getInputChannelHeight() * getInputChannelWidth());
         assert(batch_size_ < kReserved_batch_size);
 
@@ -79,7 +79,7 @@ public:
         auto forward_result = network_.forward(std::vector<torch::jit::IValue>{torch::cat(tensor_input_).to(getDevice())}).toGenericDict();
 
         auto embedding_output = forward_result.at("embeddings").toTensor().to(at::kCPU);
-        const int embedding_size = config::siamese_nn_embedding_size;
+        const int embedding_size = config::iig_nn_embedding_size;
         assert(embedding_output.numel() == batch_size_ * embedding_size);
 
         std::vector<std::shared_ptr<NetworkOutput>> network_outputs;

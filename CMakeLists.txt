@@ -27,7 +27,7 @@ add_subdirectory(minizero/console)
 add_subdirectory(minizero/environment)
 add_subdirectory(minizero/learner)
 add_subdirectory(minizero/network)
-add_subdirectory(minizero/iig_data_generator)
+add_subdirectory(minizero/iig)
 add_subdirectory(minizero/utils)
 add_subdirectory(minizero/zero)
 

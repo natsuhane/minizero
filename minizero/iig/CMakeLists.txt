@@ -1,15 +1,12 @@
 file(GLOB SRCS *.cpp)
 
-add_executable(minizero ${SRCS})
+add_library(iig ${SRCS})
+target_include_directories(iig PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(
-    minizero
-    actor
-    config
-    console
-    environment
     iig
+    config
+    environment
     network
     utils
-    zero
     ${TORCH_LIBRARIES}
 )
