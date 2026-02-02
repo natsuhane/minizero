@@ -41,8 +41,8 @@
         <input type="number" id="start-idx" value="1" step="10" min="0" style="width: 60px;">
         <label>盤 至 第</label>
         <input type="number" id="end-idx" value="20" step="10" min="10" style="width: 60px;">
-        <label>盤 (Information Set Size = TOTAL_GAMES 盤; COMMENT)</label>
-        <button onclick="updateDisplay()">更新顯示</button>
+        <label>盤 (Information Set Size = TOTAL_GAMES 盤; <span style="color: red; margin-left: 10px;">COMMENT</span>)</label>
+        <button id="display-button" onclick="updateDisplay()">更新顯示</button>
         <span id="status" style="color: blue; margin-left: 10px;"></span>
     </div>
 
@@ -74,6 +74,14 @@
 
                 document.getElementById("status").innerText = "目前顯示: 第 " + (targetStartRow * 10) + " - " + (targetEndRow * 10) + " 盤";
             }
+            function handleEnterKey(event) {
+                if (event.key === "Enter") {
+                    document.getElementById("display-button").click();
+                }
+            }
+
+            document.getElementById("start-idx").addEventListener("keypress", handleEnterKey);
+            document.getElementById("end-idx").addEventListener("keypress", handleEnterKey);
             window.onload = function () { setTimeout(updateDisplay, 100); };
         </script>
 </body>

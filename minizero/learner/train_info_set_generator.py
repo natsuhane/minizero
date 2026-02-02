@@ -21,7 +21,7 @@ class InfoSetGeneratorDataLoader:
         self.data_list = []
 
         # allocate memory
-        self.features = np.zeros(py.get_batch_size() * py.get_iig_nn_feature_channels * py.get_nn_input_channel_height() * py.get_nn_input_channel_width(), dtype=np.float32)
+        self.features = np.zeros(py.get_batch_size() * py.get_iig_nn_feature_channels() * py.get_nn_input_channel_height() * py.get_nn_input_channel_width(), dtype=np.float32)
         self.labels = np.zeros(py.get_batch_size() * py.get_nn_action_size(), dtype=np.float32)
 
     def load_data(self, training_dir, start_iter, end_iter):
@@ -36,7 +36,7 @@ class InfoSetGeneratorDataLoader:
 
     def sample_data(self, device='cpu'):
         self.data_loader.sample_info_set_generator_data(self.features, self.labels)
-        features = torch.FloatTensor(self.features).view(py.get_batch_size(), py.get_iig_nn_feature_channels, py.get_nn_input_channel_height(), py.get_nn_input_channel_width()).to(device)
+        features = torch.FloatTensor(self.features).view(py.get_batch_size(), py.get_iig_nn_feature_channels(), py.get_nn_input_channel_height(), py.get_nn_input_channel_width()).to(device)
         labels = torch.FloatTensor(self.labels).view(py.get_batch_size(), py.get_nn_action_size()).to(device)
         return features, labels
 
@@ -52,7 +52,7 @@ class Model:
     def load_model(self, training_dir, model_file):
         self.training_step = 0
         self.network = create_network(py.get_game_name(),
-                                      py.get_iig_nn_feature_channels,
+                                      py.get_iig_nn_feature_channels(),
                                       py.get_nn_input_channel_height(),
                                       py.get_nn_input_channel_width(),
                                       py.get_nn_num_hidden_channels(),

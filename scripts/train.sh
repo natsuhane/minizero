@@ -28,7 +28,7 @@ usage()
 	exit 1
 }
 
-if [ $# -lt 4 ] || [ $(($# % 2)) -eq 0 ];
+if [ $# -lt 4 ] || [ $(($# % 2)) -ne 0 ];
 then
 	usage
 else

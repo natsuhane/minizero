@@ -199,7 +199,7 @@ bool DataLoaderThread::sampleData()
     return true;
 }
 
-int getRandomFromFilteredIds(const std::string& filtered_ids)
+int DataLoaderThread::getRandomFromFilteredIds(const std::string& filtered_ids)
 {
     if (filtered_ids.empty()) { return -1; }
     std::vector<int> ids;
