@@ -109,6 +109,7 @@ extern bool env_gomoku_exactly_five_stones;
 extern bool env_havannah_use_swap_rule;
 extern bool env_hex_use_swap_rule;
 extern bool env_killallgo_use_seki;
+extern bool env_phantomgo_has_illegal_hint_rule;
 extern int env_rubiks_scramble_rotate;
 extern int env_surakarta_no_capture_plies;
 extern int env_tetris_block_puzzle_num_holding_block;

@@ -77,6 +77,11 @@ typedef minizero::env::nogo::NoGoEnvLoader EnvironmentLoader;
 typedef minizero::env::othello::OthelloAction Action;
 typedef minizero::env::othello::OthelloEnv Environment;
 typedef minizero::env::othello::OthelloEnvLoader EnvironmentLoader;
+#elif PHANTOMGO
+#include "phantomgo.h"
+typedef minizero::env::phantomgo::PhantomGoAction Action;
+typedef minizero::env::phantomgo::PhantomGoEnv Environment;
+typedef minizero::env::phantomgo::PhantomGoEnvLoader EnvironmentLoader;
 #elif PUZZLE2048
 #include "puzzle2048.h"
 typedef minizero::env::puzzle2048::Puzzle2048Action Action;
@@ -127,6 +132,8 @@ inline void setUpEnv()
     linesofaction::initialize();
 #elif NOGO
     nogo::initialize();
+#elif PHANTOMGO
+    phantomgo::initialize();
 #elif TETRISBLOCKPUZZLE
     tetrisblockpuzzle::initialize();
 #endif
@@ -163,6 +170,8 @@ inline void setUpEnv()
 #elif CHESS
     config::env_board_size = 8;
 #elif NOGO
+    config::env_board_size = 9;
+#elif PHANTOMGO
     config::env_board_size = 9;
 #elif TICTACTOE
     config::env_board_size = 3;

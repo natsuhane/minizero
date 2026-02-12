@@ -16,6 +16,8 @@ target_include_directories(
     gomoku
     havannah
     hex
+    imperfect-information
+    imperfect-information/phantomgo
     killallgo
     linesofaction
     nogo

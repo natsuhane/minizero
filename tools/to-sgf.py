@@ -5,7 +5,8 @@ import sys
 import os
 
 gm_map = {'go': '1',
-          'hex': '11'}
+          'hex': '11',
+          'phantomgo': '1'}
 
 
 def getGame(content):
