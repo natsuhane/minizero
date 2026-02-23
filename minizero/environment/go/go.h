@@ -87,6 +87,7 @@ public:
     };
 
     // Phantom Go helper functions
+    bool isCaptureMove(const GoAction& action);
     int countStones(Player p) const;
     static MoveInfo analyzeMove(const GoEnv& before, const GoEnv& after, const GoAction& action);
 

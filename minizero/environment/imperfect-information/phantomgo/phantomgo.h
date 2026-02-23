@@ -34,7 +34,6 @@ public:
     bool act(const PhantomGoAction& action) override;
     bool isLegalAction(const PhantomGoAction& action) const override;
     std::vector<float> getFeatures(utils::Rotation rotation = utils::Rotation::kRotationNone) const override;
-    std::vector<PhantomGoAction> sampledPerfectEnvActionHistory(int seed = utils::Random::randInt()) const;
     void update(go::GoBitboard captured_stone, Player captured_player);
     std::string infoString() const;
 
@@ -74,7 +73,7 @@ public:
     bool act(const PhantomGoAction& action) override;
     bool act(const std::vector<std::string>& action_string_args) override { return act(PhantomGoAction(action_string_args, getBoardSize())); }
     void sampleOneInformationSet(int seed = utils::Random::randInt()) override;
-    std::string toString() const override;
+    std::string toSGFString(bool with_tried = true) const;
     std::string infoString() const;
 
     inline std::string name() const override { return kPhantomGoName + "_" + std::to_string(getBoardSize()) + "x" + std::to_string(getBoardSize()); }
@@ -83,7 +82,7 @@ public:
     inline float getKomi() const { return perfect_env_.getKomi(); }
 
 private:
-    PhantomGoEnv createEnvByActions(const std::vector<PhantomGoAction>& actions) const;
+    PhantomGoEnv createSampledEnvironment(int seed) const;
 };
 
 class PhantomGoEnvLoader : public ImperfectInformationEnvLoader<PhantomGoAction, PhantomGoEnv> {

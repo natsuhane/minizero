@@ -460,6 +460,25 @@ GoBitboard GoEnv::dilateBitboard(const GoBitboard& bitboard) const
            board_mask_bitboard_;
 }
 
+bool GoEnv::isCaptureMove(const GoAction& action)
+{
+    if (isPassAction(action)) { return false; }
+
+    const Player player = action.getPlayer();
+    const GoGrid& grid = getGrid(action.getActionID());
+    assert(grid.getPlayer() == Player::kPlayerNone);
+
+    for (const auto& neighbor_pos : grid.getNeighbors()) {
+        const GoGrid& neighbor_grid = getGrid(neighbor_pos);
+        const GoBlock* neighbor_block = neighbor_grid.getBlock();
+        if (neighbor_block == nullptr) { continue; }
+        if (neighbor_block->getPlayer() == player) { continue; }
+        if (neighbor_block->getNumLiberty() == 1) { return true; }
+    }
+
+    return false;
+}
+
 void GoEnv::initialize()
 {
     grids_.clear();

@@ -107,79 +107,37 @@ std::vector<float> ImperfectGoEnv::getFeatures(utils::Rotation rotation /*= util
     int num_grids = board_size_ * board_size_;
     Player next_turn = getNextPlayer(view_player_, kPhantomGoNumPlayer);
     std::vector<float> features(getNumInputChannels() * num_grids, 0.0f);
-    for (int channel = 0; channel < getNumInputChannels(); ++channel) {
-        for (int i = 0; i < 8; ++i) { // 0~15 channels
-            int index = getActionHistory().size() - 1 - i;
-            if (index < 0 || index >= static_cast<int>(known_stone_bitboard_history_.size())) { break; }
-            const GamePair<GoBitboard>& past_stone_bitboard = known_stone_bitboard_history_[index];
-            for (int pos = 0; pos < num_grids; ++pos) {
-                int rotated_pos = getRotatePosition(pos, rotation);
-                if (past_stone_bitboard.get(view_player_).test(pos)) { features[i * num_grids + rotated_pos] = 1.0f; }
-                if (past_stone_bitboard.get(next_turn).test(pos)) { features[(i + 8) * num_grids + rotated_pos] = 1.0f; }
-            }
+    for (int i = 0; i < 8; ++i) { // 0~15 channels
+        int index = static_cast<int>(known_stone_bitboard_history_.size()) - 1 - i;
+        if (index < 0 || index >= static_cast<int>(known_stone_bitboard_history_.size())) { break; }
+        const GamePair<GoBitboard>& past_stone_bitboard = known_stone_bitboard_history_[index];
+        for (int pos = 0; pos < num_grids; ++pos) {
+            int rotated_pos = getRotatePosition(pos, rotation);
+            if (past_stone_bitboard.get(view_player_).test(pos)) { features[i * num_grids + rotated_pos] = 1.0f; }
+            if (past_stone_bitboard.get(next_turn).test(pos)) { features[(i + 8) * num_grids + rotated_pos] = 1.0f; }
         }
-        for (int i = 0; i < 8; ++i) { // 16~23 channels
-            int index = getActionHistory().size() - 1 - i;
-            if (index < 0 || index >= static_cast<int>(tried_pos_history_.size())) { break; }
-            const GoBitboard& past_tried_pos = tried_pos_history_[index];
-            for (int pos = 0; pos < num_grids; ++pos) {
-                int rotated_pos = getRotatePosition(pos, rotation);
-                if (past_tried_pos.test(pos)) { features[(i + 16) * num_grids + rotated_pos] = 1.0f; }
-            }
-        }
-        for (int i = 0; i < 8; ++i) { // 24~31 channels
-            int index = getActionHistory().size() - 1 - i;
-            if (index < 0 || index >= static_cast<int>(capture_opp_history_.size())) { break; }
-            const GoBitboard& past_capture_opp = capture_opp_history_[index];
-            for (int pos = 0; pos < num_grids; ++pos) {
-                int rotated_pos = getRotatePosition(pos, rotation);
-                if (past_capture_opp.test(pos)) { features[(i + 24) * num_grids + rotated_pos] = 1.0f; }
-            }
-        }
-        std::fill(features.begin() + (view_player_ == Player::kPlayer1 ? 32 : 33) * num_grids,
-                  features.begin() + (view_player_ == Player::kPlayer1 ? 33 : 34) * num_grids, 1.0f);
     }
+    for (int i = 0; i < 8; ++i) { // 16~23 channels
+        int index = static_cast<int>(tried_pos_history_.size()) - i;
+        if (index < 0 || index >= static_cast<int>(tried_pos_history_.size())) { break; }
+        const GoBitboard& past_tried_pos = (i == 0 ? tried_pos_ : tried_pos_history_[index]);
+        for (int pos = 0; pos < num_grids; ++pos) {
+            int rotated_pos = getRotatePosition(pos, rotation);
+            if (past_tried_pos.test(pos)) { features[(i + 16) * num_grids + rotated_pos] = 1.0f; }
+        }
+    }
+    for (int i = 0; i < 8; ++i) { // 24~31 channels
+        int index = static_cast<int>(capture_opp_history_.size()) - 1 - i;
+        if (index < 0 || index >= static_cast<int>(capture_opp_history_.size())) { break; }
+        const GoBitboard& past_capture_opp = capture_opp_history_[index];
+        for (int pos = 0; pos < num_grids; ++pos) {
+            int rotated_pos = getRotatePosition(pos, rotation);
+            if (past_capture_opp.test(pos)) { features[(i + 24) * num_grids + rotated_pos] = 1.0f; }
+        }
+    }
+    std::fill(features.begin() + (view_player_ == Player::kPlayer1 ? 32 : 33) * num_grids,
+              features.begin() + (view_player_ == Player::kPlayer1 ? 33 : 34) * num_grids, 1.0f);
     return features;
-}
-
-std::vector<PhantomGoAction> ImperfectGoEnv::sampledPerfectEnvActionHistory(int seed /*= utils::Random::randInt()*/) const
-{
-    std::mt19937 generator(seed);
-    std::vector<PhantomGoAction> opp_legal_actions;
-    for (int pos = 0; pos <= board_size_ * board_size_; ++pos) {
-        GoAction action(pos, getNextPlayer(view_player_, kPhantomGoNumPlayer));
-        if (!isLegalAction(action)) { continue; }
-        opp_legal_actions.push_back(action);
-    }
-
-    std::vector<PhantomGoAction> opp_known_actions;
-    GoBitboard known_stone = stone_bitboard_.get(getNextPlayer(view_player_, kPhantomGoNumPlayer));
-    while (!known_stone.none()) {
-        int pos = known_stone._Find_first();
-        known_stone.reset(pos);
-        opp_known_actions.push_back(PhantomGoAction(pos, getNextPlayer(view_player_, kPhantomGoNumPlayer)));
-    }
-    std::shuffle(opp_known_actions.begin(), opp_known_actions.end(), generator);
-
-    std::vector<PhantomGoAction> actions;
-    std::uniform_int_distribution<int> int_distribution;
-    // for opp actions: sample from known information, then, sample randomly from legal actions
-    for (int i = 0; i < num_opp_stones_; ++i) {
-        if (!opp_known_actions.empty()) {
-            actions.push_back(opp_known_actions.back());
-            opp_known_actions.pop_back();
-        } else {
-            actions.push_back(opp_legal_actions[int_distribution(generator) % opp_legal_actions.size()]);
-        }
-    }
-
-    // for our actions: we know exactly, just directly play it
-    for (size_t i = 0; i < getActionHistory().size(); ++i) {
-        const PhantomGoAction& action = getActionHistory()[i];
-        if (action.getPlayer() != view_player_) { continue; }
-        actions.push_back(action);
-    }
-    return actions;
 }
 
 void ImperfectGoEnv::update(go::GoBitboard captured_stone, Player captured_player)
@@ -269,24 +227,21 @@ bool PhantomGoEnv::act(const PhantomGoAction& action)
 
 void PhantomGoEnv::sampleOneInformationSet(int seed /*= utils::Random::randInt()*/)
 {
-    Player turn = getTurn();
-    std::vector<PhantomGoAction> actions = imperfect_env_.get(turn).sampledPerfectEnvActionHistory(seed);
-    PhantomGoEnv sampled_env = createEnvByActions(actions);
+    assert(!isTerminal());
+    PhantomGoEnv sampled_env = createSampledEnvironment(seed);
     *this = sampled_env;
 }
 
-std::string PhantomGoEnv::toString() const
+std::string PhantomGoEnv::toSGFString(bool with_tried /*= true*/) const
 {
-    std::vector<std::vector<std::string>> board_str = {
-        utils::stringToVector(perfect_env_.toString(), "\n"),
-        utils::stringToVector(imperfect_env_.get(Player::kPlayer1).toString(), "\n"),
-        utils::stringToVector(imperfect_env_.get(Player::kPlayer2).toString(), "\n")};
-
     std::ostringstream oss;
-    for (size_t i = 0; i < board_str[0].size(); ++i) {
-        for (auto& str : board_str) { oss << str[i] << "    "; }
-        oss << std::endl;
+    oss << "(;FF[4]GM[1]SZ[" << perfect_env_.getBoardSize() << "]KM[" << perfect_env_.getKomi() << "]";
+    const auto& action_history = (with_tried ? getActionHistory() : perfect_env_.getActionHistory());
+    for (const auto& action : action_history) {
+        oss << ";" << std::string(1, env::playerToChar(action.getPlayer()))
+            << "[" << SGFLoader::actionIDToSGFString(action.getActionID(), perfect_env_.getBoardSize()) + "]";
     }
+    oss << ")";
     return oss.str();
 }
 
@@ -305,13 +260,55 @@ std::string PhantomGoEnv::infoString() const
     return oss.str();
 }
 
-PhantomGoEnv PhantomGoEnv::createEnvByActions(const std::vector<PhantomGoAction>& actions) const
+PhantomGoEnv PhantomGoEnv::createSampledEnvironment(int seed) const
 {
+    std::mt19937 generator(seed);
+    const ImperfectGoEnv& imperfect_env = imperfect_env_.get(getTurn());
+    std::vector<PhantomGoAction> opp_legal_actions;
+    for (int pos = 0; pos < imperfect_env.getBoardSize() * imperfect_env.getBoardSize(); ++pos) {
+        PhantomGoAction action(pos, getNextPlayer(getTurn(), kPhantomGoNumPlayer));
+        if (!imperfect_env.isLegalAction(action)) { continue; }
+        opp_legal_actions.push_back(action);
+    }
+
+    // play our actions
     Player turn = getTurn();
-    PhantomGoEnv tmp_env;
-    for (const auto& action : actions) { tmp_env.act(action); }
-    tmp_env.setTurn(turn);
-    return tmp_env;
+    PhantomGoEnv sampled_env;
+    for (size_t i = 0; i < imperfect_env.getActionHistory().size(); ++i) {
+        const PhantomGoAction& action = imperfect_env.getActionHistory()[i];
+        if (action.getPlayer() != turn) { continue; }
+        if (imperfect_env.isPassAction(action)) { continue; }
+        sampled_env.act(action);
+    }
+
+    // play known opponent stones
+    GoBitboard known_stone = imperfect_env.getStoneBitboard().get(getNextPlayer(turn, kPhantomGoNumPlayer));
+    int remaining_opp_stones = imperfect_env.getNumOpponentStones() - known_stone.count();
+    while (!known_stone.none()) {
+        int pos = known_stone._Find_first();
+        known_stone.reset(pos);
+        sampled_env.act(PhantomGoAction(pos, getNextPlayer(turn, kPhantomGoNumPlayer)));
+    }
+
+    // play unknown opponent stones
+    std::uniform_int_distribution<int> int_distribution;
+    for (int i = 0; i < remaining_opp_stones; ++i) {
+        int selected_index = int_distribution(generator) % opp_legal_actions.size();
+        const PhantomGoAction& action = opp_legal_actions[selected_index];
+        if (sampled_env.getPerfectEnv().isLegalAction(action) && !sampled_env.getPerfectEnv().isCaptureMove(action)) {
+            sampled_env.act(action);
+        } else {
+            --i;
+        }
+        opp_legal_actions[selected_index] = opp_legal_actions.back();
+        opp_legal_actions.pop_back();
+        if (opp_legal_actions.empty()) { break; }
+    }
+    sampled_env.setTurn(turn);
+
+    assert(sampled_env.getImperfectEnv(turn).getStoneBitboard().get(turn) == imperfect_env_.get(turn).getStoneBitboard().get(turn));
+    assert(!sampled_env.isTerminal());
+    return sampled_env;
 }
 
 std::pair<std::vector<float>, std::vector<float>> PhantomGoEnvLoader::getISGeneratorFeaturesAndLabel(const int pos, utils::Rotation rotation /*= utils::Rotation::kRotationNone*/) const
@@ -334,8 +331,10 @@ std::pair<std::vector<float>, std::vector<float>> PhantomGoEnvLoader::getISGener
 
     std::vector<float> labels(getPolicySize(), 0.0f);
     int num_predicted = Random::randInt() % (unknown_stone_pos.size() + 1);
-    for (int i = num_predicted; i < unknown_stone_pos.size(); ++i) { labels[getRotateAction(unknown_stone_pos[i], rotation)] = 1.0f / (unknown_stone_pos.size() - num_predicted); }
-    if (num_predicted == unknown_stone_pos.size()) { labels.back() = 1.0f; } // PASS for termination
+    for (size_t i = num_predicted; i < unknown_stone_pos.size(); ++i) { labels[getRotateAction(unknown_stone_pos[i], rotation)] = 1.0f / (unknown_stone_pos.size() - num_predicted); }
+    if (num_predicted == static_cast<int>(unknown_stone_pos.size())) {
+        labels.back() = 1.0f; // PASS for termination
+    }
 
     std::vector<float> features = env.getFeatures(false, rotation);
     std::vector<float> predicted_feature(board_size_ * board_size_, 0.0f);

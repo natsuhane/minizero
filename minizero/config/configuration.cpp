@@ -95,6 +95,9 @@ int iig_game_step = 0;
 
 // environment parameters
 int env_board_size = 0;
+bool env_iig_display_perfect_board = true;
+bool env_iig_display_imperfect_p1_board = true;
+bool env_iig_display_imperfect_p2_board = true;
 std::string env_atari_rom_dir = "/opt/atari57/";
 std::string env_atari_name = "ms_pacman";
 bool env_conhex_use_swap_rule = true;
@@ -230,6 +233,9 @@ void setConfiguration(ConfigureLoader& cl)
     cl.addParameter("env_killallgo_ko_rule", env_go_ko_rule, "the ko rules in Killall-Go: positional (only consider stones), situational (consider stones and the turn)", "Environment");
     cl.addParameter("env_killallgo_use_seki", env_killallgo_use_seki, "true for enabling seki", "Environment");
 #elif PHANTOMGO
+    cl.addParameter("env_iig_display_perfect_board", env_iig_display_perfect_board, "true for displaying the perfect board", "Environment");
+    cl.addParameter("env_iig_display_imperfect_p1_board", env_iig_display_imperfect_p1_board, "true for displaying the imperfect board of player 1", "Environment");
+    cl.addParameter("env_iig_display_imperfect_p2_board", env_iig_display_imperfect_p2_board, "true for displaying the imperfect board of player 2", "Environment");
     cl.addParameter("env_phantomgo_komi", env_go_komi, "the komi in PhantomGo", "Environment");
     cl.addParameter("env_phantomgo_ko_rule", env_go_ko_rule, "the ko rules in PhantomGo: positional (only consider stones), situational (consider stones and the turn)", "Environment");
     cl.addParameter("env_phantomgo_has_illegal_hint_rule", env_phantomgo_has_illegal_hint_rule, "true for enabling illegal hint rule in PhantomGo", "Environment");

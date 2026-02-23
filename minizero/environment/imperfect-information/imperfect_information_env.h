@@ -1,6 +1,7 @@
 #pragma once
 
 #include "base_env.h"
+#include "configuration.h"
 #include "random.h"
 #include <algorithm>
 #include <string>
@@ -64,6 +65,20 @@ public:
     int getDiscreteValueSize() const override { return perfect_env_.getDiscreteValueSize(); }
     int getRotatePosition(int position, utils::Rotation rotation) const override { return perfect_env_.getRotatePosition(position, rotation); }
     int getRotateAction(int action_id, utils::Rotation rotation) const override { return perfect_env_.getRotateAction(action_id, rotation); }
+    std::string toString() const override
+    {
+        std::vector<std::vector<std::string>> board_str;
+        if (config::env_iig_display_perfect_board) { board_str.push_back(utils::stringToVector(perfect_env_.toString(), "\n")); }
+        if (config::env_iig_display_imperfect_p1_board) { board_str.push_back(utils::stringToVector(imperfect_env_.get(Player::kPlayer1).toString(), "\n")); }
+        if (config::env_iig_display_imperfect_p2_board) { board_str.push_back(utils::stringToVector(imperfect_env_.get(Player::kPlayer2).toString(), "\n")); }
+
+        std::ostringstream oss;
+        for (size_t i = 0; i < board_str[0].size(); ++i) {
+            for (auto& str : board_str) { oss << str[i] << "    "; }
+            oss << std::endl;
+        }
+        return oss.str();
+    }
 
     void setTurn(Player p)
     {

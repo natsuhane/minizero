@@ -97,6 +97,9 @@ extern int iig_game_step;
 
 // environment parameters
 extern int env_board_size;
+extern bool env_iig_display_perfect_board;
+extern bool env_iig_display_imperfect_p1_board;
+extern bool env_iig_display_imperfect_p2_board;
 
 // environment parameters for specific game
 extern std::string env_atari_rom_dir;
