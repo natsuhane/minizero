@@ -99,6 +99,11 @@ MCTSNode* MCTS::selectChildByMaxCount(const MCTSNode* node) const
         max_count = child->getCount();
         selected = child;
     }
+    if (max_count == 0.0f) {
+        // if all children have 0 count, randomly select one child
+        int rand_index = utils::Random::randInt() % node->getNumChildren();
+        selected = node->getChild(rand_index);
+    }
     assert(selected != nullptr);
     return selected;
 }
@@ -119,6 +124,7 @@ MCTSNode* MCTS::selectChildBySoftmaxCount(const MCTSNode* node, float temperatur
         float rand = utils::Random::randReal(sum);
         if (selected == nullptr || rand < count) { selected = child; }
     }
+    if (selected == nullptr) { selected = best_child; }
     assert(selected != nullptr);
     return selected;
 }

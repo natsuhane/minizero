@@ -33,6 +33,7 @@ extern int actor_gumbel_sample_size;
 extern float actor_gumbel_sigma_visit_c;
 extern float actor_gumbel_sigma_scale_c;
 extern float actor_resign_threshold;
+extern int actor_pimc_repeat;
 
 // zero parameters
 extern int zero_num_threads;

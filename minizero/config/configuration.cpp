@@ -31,6 +31,7 @@ int actor_gumbel_sample_size = 16;
 float actor_gumbel_sigma_visit_c = 50;
 float actor_gumbel_sigma_scale_c = 1;
 float actor_resign_threshold = -0.9f;
+int actor_pimc_repeat = 5;
 
 // zero parameters
 int zero_num_threads = 4;

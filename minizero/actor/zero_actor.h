@@ -45,12 +45,16 @@ public:
     const std::shared_ptr<MCTS> getMCTS() const { return std::static_pointer_cast<MCTS>(search_); }
 
 protected:
+    void resetPIMCSearch();
     std::vector<std::pair<std::string, std::string>> getActionInfo() const override;
-    std::string getMCTSPolicy() const override { return (config::actor_use_gumbel ? gumbel_zero_.getMCTSPolicy(getMCTS()) : getMCTS()->getSearchDistributionString()); }
+    std::string getMCTSPolicy() const override { return (config::actor_use_gumbel ? getAccumulateMCTSPolicy() : getMCTS()->getSearchDistributionString()); }
     std::string getMCTSValue() const override { return std::to_string(getMCTS()->getRootNode()->getMean()); }
     std::string getEnvReward() const override;
 
     virtual void step();
+    void accumulateMCTSPolicy(const std::string& policy_str, std::vector<float>& pimc_policy);
+    void setAccumulateMCTSPolicy(std::vector<float>& pimc_policy);
+    std::string getAccumulateMCTSPolicy() const { return accumulate_mcts_policy_; }
     virtual void handleSearchDone();
     virtual MCTSNode* decideActionNode();
     virtual void addNoiseToNodeChildren(MCTSNode* node);
@@ -67,6 +71,15 @@ protected:
     utils::Rotation feature_rotation_;
     std::shared_ptr<network::AlphaZeroNetwork> alphazero_network_;
     std::shared_ptr<network::MuZeroNetwork> muzero_network_;
+
+    // for pimc
+    int pimc_count_;
+    Environment env_backup_;
+    std::vector<Environment> pimc_envs_;
+    std::vector<MCTSNode> pimc_roots_;
+    std::vector<float> pimc_policy_;
+    std::vector<std::vector<MCTSNode>> pimc_children_nodes_;
+    std::string accumulate_mcts_policy_;
 };
 
 } // namespace minizero::actor

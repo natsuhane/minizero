@@ -24,6 +24,7 @@ void ZeroActor::reset()
 {
     BaseActor::reset();
     enable_resign_ = (utils::Random::randReal() < config::zero_disable_resign_ratio ? false : true);
+    resetPIMCSearch();
 }
 
 void ZeroActor::resetSearch()
@@ -31,6 +32,18 @@ void ZeroActor::resetSearch()
     BaseActor::resetSearch();
     mcts_search_data_.node_path_.clear();
     getMCTS()->getRootNode()->setAction(Action(-1, env::getPreviousPlayer(env_.getTurn(), env_.getNumPlayer())));
+}
+
+void ZeroActor::resetPIMCSearch()
+{
+    pimc_count_ = 0;
+    pimc_roots_.clear();
+    pimc_roots_.resize(config::actor_pimc_repeat, MCTSNode());
+    pimc_children_nodes_.clear();
+    pimc_children_nodes_.resize(config::actor_pimc_repeat, std::vector<MCTSNode>(env_.getPolicySize(), MCTSNode()));
+    pimc_envs_.clear();
+    pimc_policy_.clear();
+    pimc_policy_.resize(env_.getPolicySize(), 0.0f);
 }
 
 Action ZeroActor::think(bool with_play /*= false*/, bool display_board /*= false*/)
@@ -52,6 +65,11 @@ void ZeroActor::beforeNNEvaluation()
 {
     mcts_search_data_.node_path_ = selection();
     if (alphazero_network_) {
+        if (getMCTS()->getNumSimulation() == 0) {
+            if (pimc_count_ == 0) { env_backup_ = env_; }
+            env_.sampleOneInformationSet(pimc_count_);
+            pimc_envs_.push_back(env_);
+        }
         Environment env_transition = getEnvironmentTransition(mcts_search_data_.node_path_);
         feature_rotation_ = config::actor_use_random_rotation_features ? static_cast<utils::Rotation>(utils::Random::randInt() % static_cast<int>(utils::Rotation::kRotateSize)) : utils::Rotation::kRotationNone;
         nn_evaluation_batch_id_ = alphazero_network_->pushBack(env_transition.getFeatures(feature_rotation_));
@@ -151,13 +169,89 @@ void ZeroActor::step()
         feature_rotation_ = std::get<1>(query);
         mcts_search_data_.node_path_ = std::get<2>(query);
         afterNNEvaluation(network_output[nn_evaluation_batch_id_]);
+        if (mcts_search_data_.node_path_.empty()) { return; }
         auto virtual_loss = mcts_search_data_.node_path_.back()->getVirtualLoss();
         for (auto node : mcts_search_data_.node_path_) { node->removeVirtualLoss(virtual_loss); }
     }
 }
 
+void ZeroActor::accumulateMCTSPolicy(const std::string& policy_str, std::vector<float>& pimc_policy)
+{
+    std::istringstream ss(policy_str);
+    std::string token;
+
+    while (std::getline(ss, token, ',')) {
+        size_t delim_pos = token.find(':');
+        if (delim_pos == std::string::npos) { continue; }
+
+        int action_id = std::stoi(token.substr(0, delim_pos));
+        float prob = std::stof(token.substr(delim_pos + 1));
+
+        if (action_id >= 0 && action_id < static_cast<int>(pimc_policy.size())) {
+            pimc_policy[action_id] += prob;
+        }
+    }
+}
+
+void ZeroActor::setAccumulateMCTSPolicy(std::vector<float>& pimc_policy)
+{
+    accumulate_mcts_policy_.clear();
+    for (size_t i = 0; i < pimc_policy.size(); ++i) {
+        if (pimc_policy[i] > 0.0f) {
+            if (!accumulate_mcts_policy_.empty()) { accumulate_mcts_policy_ += ","; }
+            accumulate_mcts_policy_ += std::to_string(i) + ":" + std::to_string(pimc_policy[i]);
+        }
+    }
+}
+
 void ZeroActor::handleSearchDone()
 {
+    env_ = env_backup_;
+    MCTSNode* root = getMCTS()->getRootNode();
+    if (config::actor_use_gumbel) { accumulateMCTSPolicy(gumbel_zero_.getMCTSPolicy(getMCTS()), pimc_policy_); }
+
+    pimc_roots_[pimc_count_].add(root->getMean(), root->getCount());
+    for (int i = 0; i < root->getNumChildren(); ++i) {
+        MCTSNode* child = root->getChild(i);
+        MCTSNode& pimc_child = pimc_children_nodes_[pimc_count_][child->getAction().getActionID()];
+        pimc_child.setAction(child->getAction());
+        pimc_child.add(child->getMean(), child->getCount());
+        pimc_child.setPolicy(child->getPolicy());
+        pimc_child.setValue(child->getValue());
+    }
+    resetSearch();
+    ++pimc_count_;
+    if (pimc_count_ < config::actor_pimc_repeat) { return; }
+
+    // at the final stage, we need to expand root's children again since we need to use current imperfect board to exapnd legal actions
+    std::vector<MCTS::ActionCandidate> action_candidates;
+    for (int action_id = 0; action_id < env_.getPolicySize(); ++action_id) {
+        Action action(action_id, env_.getTurn());
+        if (!env_.isLegalAction(action, false)) { continue; }
+        action_candidates.push_back(MCTS::ActionCandidate(action, 0.0f, 0.0f));
+    }
+    getMCTS()->expand(root, action_candidates);
+
+    float policy_sum = 0.0f, value_sum = 0.0f;
+    for (size_t i = 0; i < pimc_roots_.size(); ++i) {
+        root->add(pimc_roots_[i].getMean(), pimc_roots_[i].getCount());
+        for (int j = 0; j < root->getNumChildren(); ++j) {
+            MCTSNode* child = root->getChild(j);
+            MCTSNode& pimc_child = pimc_children_nodes_[i][child->getAction().getActionID()];
+            child->add(pimc_child.getMean(), pimc_child.getCount());
+            policy_sum += child->getPolicy();
+            value_sum += child->getValue();
+            child->setPolicy(policy_sum / config::actor_pimc_repeat);
+            child->setValue(value_sum / config::actor_pimc_repeat);
+        }
+    }
+    root->setCount(config::actor_num_simulation + 1);
+
+    if (config::actor_use_gumbel) {
+        for (size_t i = 0; i < pimc_policy_.size(); ++i) { pimc_policy_[i] /= config::actor_pimc_repeat; }
+    }
+    setAccumulateMCTSPolicy(pimc_policy_);
+
     mcts_search_data_.selected_node_ = decideActionNode();
     const Action action = getSearchAction();
     std::ostringstream oss;
@@ -172,7 +266,11 @@ void ZeroActor::handleSearchDone()
     oss << std::endl
         << "  root node info: " << getMCTS()->getRootNode()->toString() << std::endl
         << "action node info: " << mcts_search_data_.selected_node_->toString() << std::endl;
+    for (size_t i = 0; i < pimc_children_nodes_.size(); ++i) {
+        oss << "pimc node info (" << i << "): " << pimc_children_nodes_[i][mcts_search_data_.selected_node_->getAction().getActionID()].toString() << std::endl;
+    }
     mcts_search_data_.search_info_ = oss.str();
+    resetPIMCSearch();
 }
 
 MCTSNode* ZeroActor::decideActionNode()
