@@ -49,11 +49,13 @@ public:
     }
 
     bool getSelfPlayData(ZeroSelfPlayData& sp_data);
-    bool isOptimizationPahse();
+    bool isOptimizationPhase();
     int getModelIetration();
 
     bool is_optimization_phase_;
+    bool is_discriminator_optimization_phase_;
     int num_op_worker_;
+    int num_dop_worker_;
     int total_games_;
     int model_iteration_;
     ZeroLogger logger_;

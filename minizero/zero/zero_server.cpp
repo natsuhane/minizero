@@ -62,10 +62,10 @@ bool ZeroWorkerSharedData::getSelfPlayData(ZeroSelfPlayData& sp_data)
     return true;
 }
 
-bool ZeroWorkerSharedData::isOptimizationPahse()
+bool ZeroWorkerSharedData::isOptimizationPhase()
 {
     boost::lock_guard<boost::mutex> lock(mutex_);
-    return is_optimization_phase_;
+    return (is_optimization_phase_ || (config::iig_use_discriminator && is_discriminator_optimization_phase_));
 }
 
 int ZeroWorkerSharedData::getModelIetration()
@@ -89,6 +89,7 @@ void ZeroWorkerHandler::handleReceivedMessage(const std::string& message)
             job_command += "Job_SelfPlay ";
             job_command += config::zero_training_directory + " ";
             job_command += "nn_file_name=" + config::zero_training_directory + "/model/weight_iter_" + std::to_string(shared_data_.getModelIetration()) + ".pt";
+            job_command += ":iig_discriminator_file_name=" + config::zero_training_directory + "/discriminator_model/weight_iter_" + std::to_string(shared_data_.getModelIetration()) + ".pt";
             job_command += ":program_auto_seed=false:program_seed=" + std::to_string(utils::Random::randInt());
             write(job_command);
             syncConfig();
@@ -100,6 +101,16 @@ void ZeroWorkerHandler::handleReceivedMessage(const std::string& message)
             } else {
                 ++shared_data_.num_op_worker_;
                 write("Job_Optimization " + config::zero_training_directory);
+                syncConfig();
+            }
+        } else if (type_ == "dop") {
+            if (shared_data_.num_dop_worker_ >= 1) {
+                shared_data_.logger_.addWorkerLog("[Worker Error] Receive multiple dop workers");
+                shared_data_.logger_.addWorkerLog("[Worker Disconnection] " + getName() + " " + getType());
+                ConnectionHandler::close();
+            } else {
+                ++shared_data_.num_dop_worker_;
+                write("Job_Discriminator_Optimization " + config::zero_training_directory);
                 syncConfig();
             }
         } else {
@@ -125,6 +136,9 @@ void ZeroWorkerHandler::handleReceivedMessage(const std::string& message)
         boost::lock_guard<boost::mutex> lock(shared_data_.mutex_);
         shared_data_.model_iteration_ = stoi(args[1]);
         shared_data_.is_optimization_phase_ = false;
+    } else if (args[0] == "Discriminator_Optimization_Done") {
+        boost::lock_guard<boost::mutex> lock(shared_data_.mutex_);
+        shared_data_.is_discriminator_optimization_phase_ = false;
     } else if (args[0] == "Log") {
         shared_data_.logger_.addWorkerLog("[Log] " + getName() + " " + getType() + ": " + message.substr(message.find(" ") + 1));
     } else {
@@ -148,6 +162,7 @@ void ZeroWorkerHandler::close()
     shared_data_.logger_.addWorkerLog("[Worker Disconnection] " + getName() + " " + getType());
     ConnectionHandler::close();
     if (getType() == "op") { --shared_data_.num_op_worker_; }
+    if (getType() == "dop") { --shared_data_.num_dop_worker_; }
 }
 
 void ZeroWorkerHandler::syncConfig()
@@ -181,6 +196,7 @@ void ZeroServer::initialize()
     nn_file_name = nn_file_name.substr(nn_file_name.find("weight_iter_") + std::string("weight_iter_").size());
     nn_file_name = nn_file_name.substr(0, nn_file_name.find("."));
     shared_data_.num_op_worker_ = 0;
+    shared_data_.num_dop_worker_ = 0;
     shared_data_.model_iteration_ = stoi(nn_file_name);
     shared_data_.updated_conf_str_ = getUpdatedConfig();
 }
@@ -250,6 +266,7 @@ void ZeroServer::broadcastSelfPlayJob()
         if (!worker->isIdle() || worker->getType() != "sp") { continue; }
         worker->setIdle(false);
         worker->write("load_model " + config::zero_training_directory + "/model/weight_iter_" + std::to_string(shared_data_.getModelIetration()) + ".pt");
+        if (config::iig_use_discriminator) { worker->write("load_discriminator_model " + config::zero_training_directory + "/discriminator_model/weight_iter_" + std::to_string(shared_data_.getModelIetration()) + ".pt"); }
         worker->write("reset_actors");
         worker->write("start");
     }
@@ -265,15 +282,17 @@ void ZeroServer::optimization()
     job_command += " " + std::to_string(iteration_);
 
     shared_data_.is_optimization_phase_ = true;
-    while (shared_data_.isOptimizationPahse()) {
+    shared_data_.is_discriminator_optimization_phase_ = true;
+    while (shared_data_.isOptimizationPhase()) {
         boost::lock_guard<boost::mutex> lock(worker_mutex_);
         for (auto worker : connections_) {
-            if (!worker->isIdle() || worker->getType() != "op") { continue; }
+            if (!worker->isIdle() || (worker->getType() != "op" && worker->getType() != "dop")) { continue; }
             worker->setIdle(false);
             worker->write(job_command);
         }
     }
     stopJob("op");
+    stopJob("dop");
 
     shared_data_.logger_.addTrainingLog("[Optimization] Finished.");
 }

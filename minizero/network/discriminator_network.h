@@ -11,19 +11,19 @@
 
 namespace minizero::network {
 
-class SiameseNetworkOutput : public NetworkOutput {
+class DiscriminatorNetworkOutput : public NetworkOutput {
 public:
-    std::vector<float> embeddings_;
+    float value_;
 
-    SiameseNetworkOutput(int size)
+    DiscriminatorNetworkOutput()
     {
-        embeddings_.resize(size, 0.0f);
+        value_ = 0.0f;
     }
 };
 
-class SiameseNetwork : public Network {
+class DiscriminatorNetwork : public Network {
 public:
-    SiameseNetwork()
+    DiscriminatorNetwork()
     {
         clear();
     }
@@ -42,24 +42,9 @@ public:
         return oss.str();
     }
 
-    int pushBackAnchor(std::vector<float> features)
+    int pushBack(std::vector<float> features)
     {
-        assert(static_cast<int>(features.size()) == config::iig_discriminator_feature_channels * getInputChannelHeight() * getInputChannelWidth());
-        assert(batch_size_ < kReserved_batch_size);
-
-        int index;
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            index = batch_size_++;
-            tensor_input_.resize(batch_size_);
-        }
-        tensor_input_[index] = torch::from_blob(features.data(), {1, getNumInputChannels(), getInputChannelHeight(), getInputChannelWidth()}).clone();
-        return index;
-    }
-
-    int pushBackBoard(std::vector<float> features)
-    {
-        const int num_board_input_channels = 4;
+        const int num_board_input_channels = config::iig_discriminator_feature_channels;
         assert(static_cast<int>(features.size()) == num_board_input_channels * getInputChannelHeight() * getInputChannelWidth());
         assert(batch_size_ < kReserved_batch_size);
 
@@ -78,21 +63,15 @@ public:
         assert(batch_size_ > 0);
         auto forward_result = network_.forward(std::vector<torch::jit::IValue>{torch::cat(tensor_input_).to(getDevice())}).toGenericDict();
 
-        auto embedding_output = forward_result.at("embeddings").toTensor().to(at::kCPU);
-        const int embedding_size = config::iig_nn_embedding_size;
-        assert(embedding_output.numel() == batch_size_ * embedding_size);
+        auto value_output = forward_result.at("value").toTensor().to(at::kCPU);
+        assert(value_output.numel() == batch_size_);
 
         std::vector<std::shared_ptr<NetworkOutput>> network_outputs;
         for (int i = 0; i < batch_size_; ++i) {
-            network_outputs.emplace_back(std::make_shared<SiameseNetworkOutput>(embedding_size));
-            auto siamese_network_output = std::static_pointer_cast<SiameseNetworkOutput>(network_outputs.back());
-
-            // policy & policy logits
-            std::copy(embedding_output.data_ptr<float>() + i * embedding_size,
-                      embedding_output.data_ptr<float>() + (i + 1) * embedding_size,
-                      siamese_network_output->embeddings_.begin());
+            network_outputs.emplace_back(std::make_shared<DiscriminatorNetworkOutput>());
+            auto discriminator_network_output = std::static_pointer_cast<DiscriminatorNetworkOutput>(network_outputs.back());
+            discriminator_network_output->value_ = value_output[i].item<float>();
         }
-
         clear();
         return network_outputs;
     }

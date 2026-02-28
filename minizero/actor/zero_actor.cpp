@@ -12,6 +12,7 @@ namespace minizero::actor {
 
 using namespace minizero;
 using namespace network;
+using namespace utils;
 
 void MCTSSearchData::clear()
 {
@@ -32,6 +33,7 @@ void ZeroActor::resetSearch()
     BaseActor::resetSearch();
     mcts_search_data_.node_path_.clear();
     getMCTS()->getRootNode()->setAction(Action(-1, env::getPreviousPlayer(env_.getTurn(), env_.getNumPlayer())));
+    info_set_count_ = -1;
 }
 
 void ZeroActor::resetPIMCSearch()
@@ -66,9 +68,13 @@ void ZeroActor::beforeNNEvaluation()
     mcts_search_data_.node_path_ = selection();
     if (alphazero_network_) {
         if (getMCTS()->getNumSimulation() == 0) {
+            if (config::iig_use_discriminator && pimc_count_ == 0 && info_set_count_ < config::iig_max_infoset_size) {
+                beforeDiscriminatorNNEvaluation();
+                return;
+            }
             if (pimc_count_ == 0) { env_backup_ = env_; }
-            env_.sampleOneInformationSet(pimc_count_);
-            pimc_envs_.push_back(env_);
+            env_ = env_backup_;
+            env_.sampleOneInformationSet(config::iig_use_discriminator ? informative_state_ids_[pimc_count_] : pimc_count_);
         }
         Environment env_transition = getEnvironmentTransition(mcts_search_data_.node_path_);
         feature_rotation_ = config::actor_use_random_rotation_features ? static_cast<utils::Rotation>(utils::Random::randInt() % static_cast<int>(utils::Rotation::kRotateSize)) : utils::Rotation::kRotationNone;
@@ -91,6 +97,11 @@ void ZeroActor::beforeNNEvaluation()
 
 void ZeroActor::afterNNEvaluation(const std::shared_ptr<NetworkOutput>& network_output)
 {
+    if (config::iig_use_discriminator && pimc_count_ == 0 && info_set_count_ < config::iig_max_infoset_size) {
+        afterDiscriminatorNNEvaluation(network_output);
+        return;
+    }
+
     const std::vector<MCTSNode*>& node_path = mcts_search_data_.node_path_;
     MCTSNode* leaf_node = node_path.back();
     if (alphazero_network_) {
@@ -118,16 +129,55 @@ void ZeroActor::afterNNEvaluation(const std::shared_ptr<NetworkOutput>& network_
 void ZeroActor::setNetwork(const std::shared_ptr<network::Network>& network)
 {
     assert(network);
-    alphazero_network_ = nullptr;
-    muzero_network_ = nullptr;
     if (network->getNetworkTypeName() == "alphazero") {
         alphazero_network_ = std::static_pointer_cast<AlphaZeroNetwork>(network);
     } else if (network->getNetworkTypeName() == "muzero" || network->getNetworkTypeName() == "muzero_atari") {
         muzero_network_ = std::static_pointer_cast<MuZeroNetwork>(network);
+    } else if (network->getNetworkTypeName() == "discriminator") {
+        discriminator_network_ = std::static_pointer_cast<DiscriminatorNetwork>(network);
+    } else if (network->getNetworkTypeName() == "siamese") {
+        siamese_network_ = std::static_pointer_cast<SiameseNetwork>(network);
     } else {
         assert(false);
     }
-    assert((alphazero_network_ && !muzero_network_) || (!alphazero_network_ && muzero_network_));
+}
+
+void ZeroActor::beforeDiscriminatorNNEvaluation()
+{
+    if (config::iig_discriminator_nn_type_name == "siamese") {
+        if (info_set_count_ == -1) {
+            nn_evaluation_batch_id_ = siamese_network_->pushBackAnchor(env_.getFeatures(false));
+        } else {
+            Environment env = env_;
+            env.sampleOneInformationSet(info_set_count_);
+            nn_evaluation_batch_id_ = siamese_network_->pushBackBoard(env.getFeatures(true));
+        }
+    }
+}
+
+void ZeroActor::afterDiscriminatorNNEvaluation(const std::shared_ptr<network::NetworkOutput>& network_output)
+{
+    auto embs = std::static_pointer_cast<SiameseNetworkOutput>(network_output)->embeddings_;
+
+    if (info_set_count_ == -1) {
+        anchor_embeddings_ = embs;
+        info_set_distances_.clear();
+    } else {
+        float dist = utils::distance(anchor_embeddings_, embs);
+        info_set_distances_.push_back(std::make_pair(info_set_count_, dist));
+    }
+    ++info_set_count_;
+
+    if (info_set_distances_.size() == config::iig_max_infoset_size) {
+        std::sort(info_set_distances_.begin(), info_set_distances_.end(), [](const std::pair<int, float>& a, const std::pair<int, float>& b) {
+            return a.second < b.second;
+        });
+
+        informative_state_ids_.clear();
+        for (int i = 0; i < config::actor_pimc_repeat && i < static_cast<int>(info_set_distances_.size()); ++i) {
+            informative_state_ids_.push_back(info_set_distances_[i].first);
+        }
+    }
 }
 
 std::vector<std::pair<std::string, std::string>> ZeroActor::getActionInfo() const
@@ -146,7 +196,7 @@ std::string ZeroActor::getEnvReward() const
 
 void ZeroActor::step()
 {
-    assert(alphazero_network_ || muzero_network_);
+    assert(alphazero_network_ || muzero_network_ || siamese_network_ || discriminator_network_);
     int num_simulation = getMCTS()->getNumSimulation();
     int num_simulation_left = config::actor_num_simulation + 1 - num_simulation;
     int batch_size = std::min(config::actor_mcts_think_batch_size,
@@ -162,8 +212,10 @@ void ZeroActor::step()
         }
         for (auto node : mcts_search_data_.node_path_) { node->addVirtualLoss(); }
     }
-    auto network_output = alphazero_network_ ? alphazero_network_->forward()
-                                             : (num_simulation == 0 ? muzero_network_->initialInference() : muzero_network_->recurrentInference());
+    auto network_output = siamese_network_ && siamese_network_->getBatchSize() > 0
+                              ? siamese_network_->forward()
+                              : (alphazero_network_ ? alphazero_network_->forward()
+                                                    : (num_simulation == 0 ? muzero_network_->initialInference() : muzero_network_->recurrentInference()));
     for (auto& query : batch_queries) {
         nn_evaluation_batch_id_ = std::get<0>(query);
         feature_rotation_ = std::get<1>(query);
@@ -255,7 +307,7 @@ void ZeroActor::handleSearchDone()
     mcts_search_data_.selected_node_ = decideActionNode();
     const Action action = getSearchAction();
     std::ostringstream oss;
-    oss << "model file name: " << config::nn_file_name << std::endl
+    oss << "model file name: " << getModelFileName() << std::endl
         << utils::TimeSystem::getTimeString("[Y/m/d H:i:s.f] ")
         << "move number: " << env_.getActionHistory().size()
         << ", action: " << action.toConsoleString()

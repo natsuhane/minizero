@@ -2,9 +2,11 @@
 
 #include "alphazero_network.h"
 #include "base_actor.h"
+#include "discriminator_network.h"
 #include "gumbel_zero.h"
 #include "mcts.h"
 #include "muzero_network.h"
+#include "siamese_network.h"
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -28,6 +30,8 @@ public:
     {
         alphazero_network_ = nullptr;
         muzero_network_ = nullptr;
+        discriminator_network_ = nullptr;
+        siamese_network_ = nullptr;
     }
 
     void reset() override;
@@ -46,10 +50,13 @@ public:
 
 protected:
     void resetPIMCSearch();
+    void beforeDiscriminatorNNEvaluation();
+    void afterDiscriminatorNNEvaluation(const std::shared_ptr<network::NetworkOutput>& network_output);
     std::vector<std::pair<std::string, std::string>> getActionInfo() const override;
     std::string getMCTSPolicy() const override { return (config::actor_use_gumbel ? getAccumulateMCTSPolicy() : getMCTS()->getSearchDistributionString()); }
     std::string getMCTSValue() const override { return std::to_string(getMCTS()->getRootNode()->getMean()); }
     std::string getEnvReward() const override;
+    std::string getModelFileName() const { return (alphazero_network_ ? alphazero_network_->getNetworkFileName() : (muzero_network_ ? muzero_network_->getNetworkFileName() : "")); }
 
     virtual void step();
     void accumulateMCTSPolicy(const std::string& policy_str, std::vector<float>& pimc_policy);
@@ -71,6 +78,8 @@ protected:
     utils::Rotation feature_rotation_;
     std::shared_ptr<network::AlphaZeroNetwork> alphazero_network_;
     std::shared_ptr<network::MuZeroNetwork> muzero_network_;
+    std::shared_ptr<network::DiscriminatorNetwork> discriminator_network_;
+    std::shared_ptr<network::SiameseNetwork> siamese_network_;
 
     // for pimc
     int pimc_count_;
@@ -80,6 +89,11 @@ protected:
     std::vector<float> pimc_policy_;
     std::vector<std::vector<MCTSNode>> pimc_children_nodes_;
     std::string accumulate_mcts_policy_;
+
+    int info_set_count_;
+    std::vector<float> anchor_embeddings_;
+    std::vector<std::pair<int, float>> info_set_distances_;
+    std::vector<int> informative_state_ids_;
 };
 
 } // namespace minizero::actor

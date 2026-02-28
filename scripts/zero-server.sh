@@ -22,6 +22,7 @@ usage()
 	echo "  -g,        --gpu                  Assign the GPU for network model initialization, e.g. 0"
 	echo "             --sp_executable_file   Assign the path for self-play executable file"
 	echo "             --op_executable_file   Assign the path for optimization executable file"
+	echo "             --dop_executable_file  Assign the path for discriminator optimization executable file"
 	echo "             --link_sgf             Assign the path of sgf for training without self play (only op)"
 	echo "  -conf_str                         Overwrite settings in the configure file"
 	exit 1
@@ -42,6 +43,7 @@ name_suffix=""
 gpu_list=$(nvidia-smi --query-gpu=index,memory.used,utilization.gpu --format=csv,noheader,nounits | sort -k2n -k3n | head -1 | cut -d, -f1)
 sp_executable_file=build/${game_type}/minizero_${game_type}
 op_executable_file=minizero/learner/train.py
+dop_executable_file=minizero/learner/train_siamese.py
 overwrite_conf_str=""
 link_sgf=""
 while :; do
@@ -59,6 +61,8 @@ while :; do
 		--sp_executable_file) shift; sp_executable_file=$1
 		;;
 		--op_executable_file) shift; op_executable_file=$1
+		;;
+		--dop_executable_file) shift; dop_executable_file=$1
 		;;
 		--link_sgf) shift; link_sgf=$1
 		;;
@@ -98,7 +102,7 @@ if [[ ${run_stage,} == "r" ]]; then
 	rm -rf ${train_dir}
 
 	echo "create ${train_dir} ..."
-	mkdir -p ${train_dir}/model ${train_dir}/sgf
+	mkdir -p ${train_dir}/model ${train_dir}/discriminator_model ${train_dir}/sgf
 	if [[ ! -z ${link_sgf} ]];
 	then
 		ln ${link_sgf}/* ${train_dir}/sgf/
@@ -106,13 +110,16 @@ if [[ ${run_stage,} == "r" ]]; then
 		echo "link ${link_sgf} ..."
 		echo "end_iteration: ${end_iteration}"
 	fi
-	touch ${train_dir}/op.log
+	touch ${train_dir}/op.log ${train_dir}/dop.log
 	new_configure_file=$(basename ${train_dir}).cfg
 	${sp_executable_file} -gen ${train_dir}/${new_configure_file} -conf_file ${configure_file} -conf_str "${overwrite_conf_str}" 2>/dev/null
 
 	# setup initial weight
 	cuda_devices=$(echo ${gpu_list} | awk '{ split($0, chars, ""); printf(chars[1]); for(i=2; i<=length(chars); ++i) { printf(","chars[i]); } }')
 	echo "train \"\" -1 -1" | CUDA_VISIBLE_DEVICES=${cuda_devices} PYTHONPATH=. python ${op_executable_file} ${game_type} ${train_dir} ${train_dir}/${new_configure_file} >/dev/null 2>&1
+	if [[ $(grep "iig_use_discriminator=true" ${train_dir}/${new_configure_file} 2> /dev/null | wc -l) -gt 0 ]]; then
+		echo "train \"\" -1 -1" | CUDA_VISIBLE_DEVICES=${cuda_devices} PYTHONPATH=. python ${dop_executable_file} ${game_type} ${train_dir} ${train_dir}/${new_configure_file} >/dev/null 2>&1
+	fi
 elif [[ ${run_stage,} == "c" ]]; then
 	zero_start_iteration=$(ls ${train_dir}/model/ | grep ".pt$" | wc -l)
 	model_file=$(ls ${train_dir}/model/ | grep ".pt$" | sort -V | tail -n1)

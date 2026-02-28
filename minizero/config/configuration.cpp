@@ -76,7 +76,13 @@ int nn_snapshot_interval = 1000;
 // IIG parameters
 std::string iig_nn_type_name = "siamese";
 std::string iig_nn_file_name = "";
+std::string iig_generator_file_name = "";
+std::string iig_discriminator_file_name = "";
+std::string iig_player_file_name = "";
 int iig_nn_feature_channels = 28;
+int iig_generator_feature_channels = 35;
+int iig_discriminator_feature_channels = 34;
+int iig_player_feature_channels = 4;
 int iig_nn_embedding_size = 512;
 std::string iig_train_sgf_file_name = "";
 std::string iig_eval_sgf_file_name = "";
@@ -90,6 +96,8 @@ bool iig_generator_verification = false;
 std::string iig_generator_input_sgf = "";
 std::string iig_generator_output_sgf = "";
 float iig_generator_policy_threshold = 0.1f;
+bool iig_use_discriminator = false;
+std::string iig_discriminator_nn_type_name = "siamese";
 std::string iig_visualizer_input_sgf = "";
 int iig_game_id = 0;
 int iig_game_step = 0;
@@ -144,6 +152,7 @@ void setConfiguration(ConfigureLoader& cl)
     cl.addParameter("actor_gumbel_sigma_visit_c", actor_gumbel_sigma_visit_c, "hyperparameter for the monotonically increasing transformation sigma in Gumbel Zero", "Actor"); // ref: GZ, Sec. 3.4
     cl.addParameter("actor_gumbel_sigma_scale_c", actor_gumbel_sigma_scale_c, "hyperparameter for the monotonically increasing transformation sigma in Gumbel Zero", "Actor"); // ref: GZ, Sec. 3.4
     cl.addParameter("actor_resign_threshold", actor_resign_threshold, "the threshold determining when to resign in the actor", "Actor");                                       // ref: AG, Sec. Methods
+    cl.addParameter("actor_pimc_repeat", actor_pimc_repeat, "the number of times to repeat the PIMC search", "Actor");
 
     // zero parameters
     cl.addParameter("zero_num_threads", zero_num_threads, "the number of threads that the zero server uses for zero training", "Zero");
@@ -188,7 +197,13 @@ void setConfiguration(ConfigureLoader& cl)
     // IIG parameters
     cl.addParameter("iig_nn_type_name", iig_nn_type_name, "the type of the IIG network architecture: siamese/binary_cnn/info_set_generator", "IIG");
     cl.addParameter("iig_nn_file_name", iig_nn_file_name, "the file name of IIG network model weights", "IIG");
+    cl.addParameter("iig_generator_file_name", iig_generator_file_name, "the file name of the generator model weights", "IIG");
+    cl.addParameter("iig_discriminator_file_name", iig_discriminator_file_name, "the file name of the discriminator model weights", "IIG");
+    cl.addParameter("iig_player_file_name", iig_player_file_name, "the file name of the player model weights", "IIG");
     cl.addParameter("iig_nn_feature_channels", iig_nn_feature_channels, "the number of feature channels for the network input", "IIG");
+    cl.addParameter("iig_generator_feature_channels", iig_generator_feature_channels, "the number of feature channels for the generator network input", "IIG");
+    cl.addParameter("iig_discriminator_feature_channels", iig_discriminator_feature_channels, "the number of feature channels for the discriminator network input", "IIG");
+    cl.addParameter("iig_player_feature_channels", iig_player_feature_channels, "the number of feature channels for the player network input", "IIG");
     cl.addParameter("iig_nn_embedding_size", iig_nn_embedding_size, "the size of the output embedding vector", "IIG");
     cl.addParameter("iig_train_sgf_file_name", iig_train_sgf_file_name, "the training sgf file name (replace --link_sgf)", "IIG");
     cl.addParameter("iig_eval_sgf_file_name", iig_eval_sgf_file_name, "the testing sgf file name", "IIG");
@@ -202,6 +217,8 @@ void setConfiguration(ConfigureLoader& cl)
     cl.addParameter("iig_generator_input_sgf", iig_generator_input_sgf, "for generate dataset, the input sgf file name (minizero sp data)", "IIG");
     cl.addParameter("iig_generator_output_sgf", iig_generator_output_sgf, "the output sgf file name for generator", "IIG");
     cl.addParameter("iig_generator_policy_threshold", iig_generator_policy_threshold, "actions with policy probability below this value will be pruned", "IIG");
+    cl.addParameter("iig_use_discriminator", iig_use_discriminator, "true for enabling discriminator for training player", "IIG");
+    cl.addParameter("iig_discriminator_nn_type_name", iig_discriminator_nn_type_name, "the type of the discriminator network architecture: siamese", "IIG");
     cl.addParameter("iig_visualizer_input_sgf", iig_visualizer_input_sgf, "the input sgf file for web visualize tool", "IIG");
     cl.addParameter("iig_game_id", iig_game_id, "the game id for transforming sgf", "IIG");
     cl.addParameter("iig_game_step", iig_game_step, "the game step for transforming sgf", "IIG");

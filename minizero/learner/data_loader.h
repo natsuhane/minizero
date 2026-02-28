@@ -67,6 +67,7 @@ public:
     int pos_index_ = 0; // for position index
     ReplayBuffer replay_buffer_;
     std::mutex mutex_;
+    std::string sample_data_type_;
     std::deque<std::string> env_strings_;
     std::shared_ptr<BaseBatchDataPtr> data_ptr_;
 };
@@ -85,7 +86,8 @@ protected:
     virtual bool sampleData();
 
     int getRandomFromFilteredIds(const std::string& filtered_ids);
-    virtual void setIIGTrainingData(int batch_index);
+    virtual void setSiameseTrainingData(int batch_index);
+    virtual void setDiscriminatorTrainingData(int batch_index);
     virtual void setInfoSetGeneratorTrainingData(int batch_index);
     virtual void setAlphaZeroTrainingData(int batch_index);
     virtual void setMuZeroTrainingData(int batch_index);

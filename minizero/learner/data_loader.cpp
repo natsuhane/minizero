@@ -184,14 +184,12 @@ bool DataLoaderThread::sampleData()
     int batch_index = getSharedData()->getNextBatchIndex();
     if (batch_index >= config::learner_batch_size) { return false; }
 
-    if (config::iig_nn_type_name == "siamese" || config::iig_nn_type_name == "binary_cnn") {
-        setIIGTrainingData(batch_index);
-    } else if (config::nn_type_name == "info_set_generator") {
-        setInfoSetGeneratorTrainingData(batch_index);
-    } else if (config::nn_type_name == "alphazero") {
+    if (getSharedData()->sample_data_type_ == "alphazero") {
         setAlphaZeroTrainingData(batch_index);
-    } else if (config::nn_type_name == "muzero") {
-        setMuZeroTrainingData(batch_index);
+    } else if (getSharedData()->sample_data_type_ == "discriminator") {
+        setDiscriminatorTrainingData(batch_index);
+    } else if (getSharedData()->sample_data_type_ == "siamese") {
+        setSiameseTrainingData(batch_index);
     } else {
         return false; // should not be here
     }
@@ -219,37 +217,7 @@ int DataLoaderThread::getRandomFromFilteredIds(const std::string& filtered_ids)
     return ids[random_index];
 }
 
-void DataLoaderThread::setIIGTrainingData(int batch_index)
-{
-    while (true) {
-        // random pickup one position
-        std::pair<int, int> p = getSharedData()->replay_buffer_.sampleEnvAndPos();
-        int env_id = p.first, pos = p.second;
-
-        // IIG training data
-        const EnvironmentLoader& env_loader = getSharedData()->replay_buffer_.env_loaders_[env_id];
-        if (std::stoi(env_loader.getActionPairs()[pos].second["N"]) == 0) { continue; } // if info set is empty, resample another position
-        Rotation rotation = static_cast<Rotation>(Random::randInt() % static_cast<int>(Rotation::kRotateSize));
-        std::vector<float> anchor = env_loader.getAnchor(pos, rotation);
-        std::vector<float> positive = env_loader.getPositive(pos, rotation);
-
-        std::vector<float> negative = env_loader.getNegative(
-            pos,
-            rotation,
-            config::iig_sampling_strategy == "filter_by_value" ? getRandomFromFilteredIds(env_loader.getActionPairs()[pos].second["N"]) : -1);
-
-        // write data to data_ptr
-        std::copy(anchor.begin(), anchor.end(), getSharedData()->getDataPtr()->anchor_ + anchor.size() * batch_index);
-        std::copy(positive.begin(), positive.end(), getSharedData()->getDataPtr()->positive_ + positive.size() * batch_index);
-        std::copy(negative.begin(), negative.end(), getSharedData()->getDataPtr()->negative_ + negative.size() * batch_index);
-        getSharedData()->getDataPtr()->sampled_index_[2 * batch_index] = env_id;
-        getSharedData()->getDataPtr()->sampled_index_[2 * batch_index + 1] = pos;
-
-        break;
-    }
-}
-
-void DataLoaderThread::setInfoSetGeneratorTrainingData(int batch_index)
+void DataLoaderThread::setSiameseTrainingData(int batch_index)
 {
     std::pair<int, int> p = getSharedData()->replay_buffer_.sampleEnvAndPos();
     int env_id = p.first, pos = p.second;
@@ -259,10 +227,48 @@ void DataLoaderThread::setInfoSetGeneratorTrainingData(int batch_index)
     Environment env;
     for (int i = 0; i < pos; ++i) { env.act(env_loader.getActionPairs()[i].first); }
 
-    int move_number = (pos == 0 ? 0 : ((Random::randInt() % ((pos + 1) / 2)) * 2 + (1 - (pos % 2))));
-    std::vector<float> features = env.getInfoSetGeneratorFeatures(move_number, rotation);
-    std::vector<float> labels(env_loader.getPolicySize(), 0.0f);
-    labels[env_loader.getRotateAction(env_loader.getActionPairs()[move_number].first.getActionID(), rotation)] = 1.0f;
+    Environment sampled_env = env;
+    sampled_env.sampleOneInformationSet(Random::randInt() % config::actor_pimc_repeat);
+
+    std::vector<float> anchor = env.getFeatures(false, rotation);
+    std::vector<float> positive = env.getFeatures(true, rotation);
+    std::vector<float> negative = sampled_env.getFeatures(true, rotation);
+
+    std::copy(anchor.begin(), anchor.end(), getSharedData()->getDataPtr()->anchor_ + anchor.size() * batch_index);
+    std::copy(positive.begin(), positive.end(), getSharedData()->getDataPtr()->positive_ + positive.size() * batch_index);
+    std::copy(negative.begin(), negative.end(), getSharedData()->getDataPtr()->negative_ + negative.size() * batch_index);
+}
+
+void DataLoaderThread::setDiscriminatorTrainingData(int batch_index)
+{
+    std::pair<int, int> p = getSharedData()->replay_buffer_.sampleEnvAndPos();
+    int env_id = p.first, pos = p.second;
+
+    const EnvironmentLoader& env_loader = getSharedData()->replay_buffer_.env_loaders_[env_id];
+    Rotation rotation = config::actor_use_random_rotation_features ? static_cast<Rotation>(Random::randInt() % static_cast<int>(Rotation::kRotateSize)) : Rotation::kRotationNone;
+    Environment env;
+    for (int i = 0; i < pos; ++i) { env.act(env_loader.getActionPairs()[i].first); }
+
+    Environment sampled_env = env;
+    sampled_env.sampleOneInformationSet(Random::randInt() % config::actor_pimc_repeat);
+    std::vector<float> features = env.getFeatures(false, rotation);
+    std::vector<float> perfect_features = sampled_env.getFeatures(rotation);
+    features.insert(features.end(), perfect_features.begin(), perfect_features.end());
+    features = perfect_features; // TODO: fix this (5d)
+
+    float label = ((env.getTurn() == env::Player::kPlayer1) ? env_loader.getReturn() : -env_loader.getReturn());
+    std::copy(features.begin(), features.end(), getSharedData()->getDataPtr()->features_ + features.size() * batch_index);
+    getSharedData()->getDataPtr()->labels_[batch_index] = label;
+}
+
+void DataLoaderThread::setInfoSetGeneratorTrainingData(int batch_index)
+{
+    std::pair<int, int> p = getSharedData()->replay_buffer_.sampleEnvAndPos();
+    int env_id = p.first, pos = p.second;
+
+    const EnvironmentLoader& env_loader = getSharedData()->replay_buffer_.env_loaders_[env_id];
+    Rotation rotation = config::actor_use_random_rotation_features ? static_cast<Rotation>(Random::randInt() % static_cast<int>(Rotation::kRotateSize)) : Rotation::kRotationNone;
+    auto [features, labels] = env_loader.getISGeneratorFeaturesAndLabel(pos, rotation);
     std::copy(features.begin(), features.end(), getSharedData()->getDataPtr()->features_ + features.size() * batch_index);
     std::copy(labels.begin(), labels.end(), getSharedData()->getDataPtr()->labels_ + labels.size() * batch_index);
 }

@@ -103,6 +103,8 @@ void SlaveThread::doGPUJob()
     if (network->getNetworkTypeName() == "alphazero") {
         std::shared_ptr<AlphaZeroNetwork> az_network = std::static_pointer_cast<AlphaZeroNetwork>(network);
         if (az_network->getBatchSize() > 0) { getSharedData()->network_outputs_[id_] = az_network->forward(); }
+        std::shared_ptr<SiameseNetwork> siamese_network = std::dynamic_pointer_cast<SiameseNetwork>(getSharedData()->discriminator_networks_[id_]);
+        if (siamese_network && siamese_network->getBatchSize() > 0) { getSharedData()->network_outputs_[id_] = siamese_network->forward(); }
     } else if (network->getNetworkTypeName() == "muzero" || network->getNetworkTypeName() == "muzero_atari") {
         std::shared_ptr<MuZeroNetwork> muzero_network = std::static_pointer_cast<MuZeroNetwork>(network);
         if (muzero_network->getInitialInputBatchSize() > 0) {
@@ -170,9 +172,11 @@ void ActorGroup::createNeuralNetworks()
     int num_networks = std::min(static_cast<int>(torch::cuda::device_count()), config::zero_num_parallel_games);
     assert(num_networks > 0);
     getSharedData()->networks_.resize(num_networks);
+    getSharedData()->discriminator_networks_.resize(num_networks, nullptr);
     getSharedData()->network_outputs_.resize(num_networks);
     for (int gpu_id = 0; gpu_id < num_networks; ++gpu_id) {
         getSharedData()->networks_[gpu_id] = createNetwork(config::nn_file_name, gpu_id);
+        if (config::iig_use_discriminator) { getSharedData()->discriminator_networks_[gpu_id] = createNetwork(config::iig_discriminator_file_name, gpu_id); }
     }
 }
 
@@ -183,6 +187,7 @@ void ActorGroup::createActors()
     uint64_t tree_node_size = static_cast<uint64_t>(config::actor_num_simulation + 1) * network->getActionSize();
     for (int i = 0; i < config::zero_num_parallel_games; ++i) {
         getSharedData()->actors_.emplace_back(createActor(tree_node_size, getSharedData()->networks_[i % getSharedData()->networks_.size()]));
+        if (config::iig_use_discriminator) { getSharedData()->actors_.back()->setNetwork(getSharedData()->discriminator_networks_[i % getSharedData()->discriminator_networks_.size()]); }
     }
 }
 
@@ -230,6 +235,12 @@ void ActorGroup::handleCommand(const std::string& command_prefix, const std::str
         assert(args.size() == 2);
         config::nn_file_name = args[1];
         for (auto& network : getSharedData()->networks_) { network->loadModel(config::nn_file_name, network->getGPUID()); }
+    } else if (command_prefix == "load_discriminator_model") {
+        std::cerr << "[command] " << command << std::endl;
+        std::vector<std::string> args = utils::stringToVector(command);
+        assert(args.size() == 2);
+        config::iig_discriminator_file_name = args[1];
+        for (auto& network : getSharedData()->discriminator_networks_) { network->loadModel(config::iig_discriminator_file_name, network->getGPUID()); }
     } else if (command_prefix == "update_config") {
         std::cerr << "[command] " << command << std::endl;
         assert(command.find(" ") != std::string::npos);

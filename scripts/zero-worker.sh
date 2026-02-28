@@ -11,7 +11,7 @@ usage()
 	echo "Required arguments:"
     echo "  GAME_TYPE: ${support_games[@]}"
 	echo "  HOST, PORT: the host and port to connect the zero-server"
-	echo "  WORKER_TYPE: sp, op"
+	echo "  WORKER_TYPE: sp, op, dop"
 	echo ""
 	echo "Optional arguments:"
 	echo "  -h,        --help                 Give this help list"
@@ -21,6 +21,7 @@ usage()
 	echo "  -conf_str                         Add additional configure string in self-play worker"
 	echo "             --sp_executable_file   Assign the path for self-play executable file"
 	echo "             --op_executable_file   Assign the path for optimization executable file"
+	echo "             --dop_executable_file  Assign the path for discriminator optimization executable file"
 	exit 1
 }
 
@@ -43,6 +44,7 @@ fi
 
 sp_executable_file=build/${game_type}/minizero_${game_type}
 op_executable_file=minizero/learner/train.py
+dop_executable_file=minizero/learner/train_siamese.py
 while :; do
 	case $1 in
 		-h|--help) shift; usage
@@ -58,6 +60,8 @@ while :; do
 		--sp_executable_file) shift; sp_executable_file=$1
 		;;
 		--op_executable_file) shift; op_executable_file=$1
+		;;
+		--dop_executable_file) shift; dop_executable_file=$1
 		;;
 		"") break
 		;;
@@ -76,7 +80,7 @@ if [ $num_cpu_thread -gt $max_num_cpu_thread ]; then
 fi
 
 # every command in checkCommands must be executable
-checkCommands=(${sp_executable_file} ${op_executable_file} rm flock kill nvidia-smi)
+checkCommands=(${sp_executable_file} ${op_executable_file} ${dop_executable_file} rm flock kill nvidia-smi)
 
 for name in "${checkCommands[@]}"
 do
@@ -167,6 +171,13 @@ do
 					# format: py/Train.py train_dir conf_file
 					logAndSend "CUDA_VISIBLE_DEVICES=${cuda_devices} PYTHONPATH=. python ${op_executable_file} ${game_type} ${var[0]} ${CONF_FILE}"
 					CUDA_VISIBLE_DEVICES=${cuda_devices} PYTHONPATH=. python ${op_executable_file} ${game_type} ${var[0]} ${CONF_FILE} 0<&$broker_fd 1>&$broker_fd 2> >(tee -a ${var[0]}/op.log >&2)
+				elif [[ $line =~ ^Job_Discriminator_Optimization\ (.+) ]]
+				then
+					var=(${BASH_REMATCH[1]})
+					CONF_FILE=$(ls ${var[0]}/*.cfg)
+					# format: py/Train_discriminator.py train_dir conf_file
+					logAndSend "CUDA_VISIBLE_DEVICES=${cuda_devices} PYTHONPATH=. python ${dop_executable_file} ${game_type} ${var[0]} ${CONF_FILE}"
+					CUDA_VISIBLE_DEVICES=${cuda_devices} PYTHONPATH=. python ${dop_executable_file} ${game_type} ${var[0]} ${CONF_FILE} 0<&$broker_fd 1>&$broker_fd 2> >(tee -a ${var[0]}/dop.log >&2)
 				else
 					echo "read format error"
 					echo "msg: $line"

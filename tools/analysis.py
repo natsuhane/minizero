@@ -5,8 +5,8 @@ import matplotlib.ticker as ticker
 import argparse
 import os
 import sys
-import time
 import re
+from pathlib import Path
 from datetime import datetime
 plt.rcParams.update({'figure.max_open_warning': 100})
 
@@ -25,7 +25,8 @@ def analysis(training_dir, path, iter: int = -1, all: bool = False, name: bool =
     path = os.path.join(training_dir, path)
     if not os.path.isdir(path):
         os.mkdir(path)
-    analysis_(training_dir, path, iter)
+    log_file = [f.name for f in Path(training_dir).glob("*op.log")]
+    analysis_(training_dir, path, iter, all, name, log_file=log_file)
 
 
 def get_myDict(lines, iter):
@@ -95,17 +96,19 @@ def get_myDict(lines, iter):
     return myDict, learner_training_display_step, learner_training_step
 
 
-def graph_print(tmp, iter):
+def graph_print(tmp, iter, log_file=["op.log"]):
     lines = []
     op_lines = []
     myDict = {}
     for item in tmp:
         log = open(os.path.join(item, "Training.log"), 'r')
-        op_log = open(os.path.join(item, "op.log"), 'r')
+        op_logs = []
         lines.append(log.readlines())
-        op_lines.append(op_log.readlines())
-        log.close()
-        op_log.close()
+        for f in log_file:
+            op_log = open(os.path.join(item, f), 'r')
+            op_logs.extend(op_log.readlines())
+            op_log.close()
+        op_lines.append(op_logs)
     nn_step = []
     learner_training_step = 0
     for index in range(len(op_lines)):
@@ -159,14 +162,17 @@ def format_y_axis_labels(value, pos):
         return f'{value:.2f}'
 
 
-def analysis_(dir, path, iter, all: bool = False, name: bool = False):
+def analysis_(dir, path, iter, all: bool = False, name: bool = False, log_file=["op.log"]):
     # read log
-    op_log = open(os.path.join(dir, "op.log"), 'r')
+    op_logs = []
+    for f in log_file:
+        op_log = open(os.path.join(dir, f), 'r')
+        op_logs.extend(op_log.readlines())
+        op_log.close()
     Training_log = open(os.path.join(dir, "Training.log"), 'r')
     lines = []
-    lines.append(op_log.readlines())
+    lines.append(op_logs)
     lines.append(Training_log.readlines())
-    op_log.close()
     Training_log.close()
     # plt target
     myDict, learner_training_display_step, learner_training_step = get_myDict(lines, iter)
@@ -262,7 +268,8 @@ if __name__ == '__main__':
             path = os.path.join(dir, f'{out_dir}')
             if not os.path.isdir(path):
                 os.mkdir(path)
-            analysis_(dir, path, args.iter, args.all, name)
+            log_file = [f.name for f in Path(dir).glob("*op.log")]
+            analysis_(dir, path, args.iter, args.all, name, log_file=log_file)
         else:
             eprint(f'\"{dir}\" does not exist!')
             exit(1)
@@ -271,7 +278,7 @@ if __name__ == '__main__':
             if not os.path.isdir(item):
                 eprint(f'\"{item}\" does not exist!')
                 exit(1)
-        graph_print(tmp, args.iter)
+        graph_print(tmp, args.iter, log_file=["op.log"])
     else:
         parser.print_help()
         exit(1)

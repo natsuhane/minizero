@@ -61,7 +61,14 @@ PYBIND11_MODULE(minizero_py, m)
     m.def("get_nn_type_name", []() { return config::nn_type_name; });
     m.def("get_nn_snapshot_interval", []() { return config::nn_snapshot_interval; });
     m.def("get_iig_nn_type_name", []() { return config::iig_nn_type_name; });
+    m.def("get_iig_generator_file_name", []() { return config::iig_generator_file_name; });
+    m.def("get_iig_discriminator_file_name", []() { return config::iig_discriminator_file_name; });
+    m.def("get_iig_player_file_name", []() { return config::iig_player_file_name; });
     m.def("get_iig_nn_feature_channels", []() { return config::iig_nn_feature_channels; });
+    m.def("get_iig_generator_feature_channels", []() { return config::iig_generator_feature_channels; });
+    m.def("get_iig_discriminator_feature_channels", []() { return config::iig_discriminator_feature_channels; });
+    m.def("get_iig_player_feature_channels", []() { return config::iig_player_feature_channels; });
+    m.def("get_iig_discriminator_nn_type_name", []() { return config::iig_discriminator_nn_type_name; });
 
     py::class_<learner::DataLoader>(m, "DataLoader")
         .def(py::init<std::string>())
@@ -74,6 +81,7 @@ PYBIND11_MODULE(minizero_py, m)
             py::call_guard<py::gil_scoped_release>())
         .def(
             "sample_data", [](learner::DataLoader& data_loader, py::array_t<float>& features, py::array_t<float>& action_features, py::array_t<float>& policy, py::array_t<float>& value, py::array_t<float>& reward, py::array_t<float>& loss_scale, py::array_t<int>& sampled_index) {
+                data_loader.getSharedData()->sample_data_type_ = "alphazero";
                 data_loader.getSharedData()->getDataPtr()->features_ = static_cast<float*>(features.request().ptr);
                 data_loader.getSharedData()->getDataPtr()->action_features_ = static_cast<float*>(action_features.request().ptr);
                 data_loader.getSharedData()->getDataPtr()->policy_ = static_cast<float*>(policy.request().ptr);
@@ -83,11 +91,17 @@ PYBIND11_MODULE(minizero_py, m)
                 data_loader.getSharedData()->getDataPtr()->sampled_index_ = static_cast<int*>(sampled_index.request().ptr);
                 data_loader.sampleData(); }, py::call_guard<py::gil_scoped_release>())
         .def(
-            "sample_iig_data", [](learner::DataLoader& data_loader, py::array_t<float>& anchor, py::array_t<float>& positive, py::array_t<float>& negative, py::array_t<int>& sampled_index) {
+            "sample_siamese_data", [](learner::DataLoader& data_loader, py::array_t<float>& anchor, py::array_t<float>& positive, py::array_t<float>& negative, py::array_t<int>& sampled_index) {
+                data_loader.getSharedData()->sample_data_type_ = "siamese";
                 data_loader.getSharedData()->getDataPtr()->anchor_ = static_cast<float*>(anchor.request().ptr);
                 data_loader.getSharedData()->getDataPtr()->positive_ = static_cast<float*>(positive.request().ptr);
                 data_loader.getSharedData()->getDataPtr()->negative_ = static_cast<float*>(negative.request().ptr);
-                data_loader.getSharedData()->getDataPtr()->sampled_index_ = static_cast<int*>(sampled_index.request().ptr);
+                data_loader.sampleData(); }, py::call_guard<py::gil_scoped_release>())
+        .def(
+            "sample_discriminator_data", [](learner::DataLoader& data_loader, py::array_t<float>& features, py::array_t<float>& labels) {
+                data_loader.getSharedData()->sample_data_type_ = "discriminator";
+                data_loader.getSharedData()->getDataPtr()->features_ = static_cast<float*>(features.request().ptr);
+                data_loader.getSharedData()->getDataPtr()->labels_ = static_cast<float*>(labels.request().ptr);
                 data_loader.sampleData(); }, py::call_guard<py::gil_scoped_release>())
         .def(
             "sample_info_set_generator_data", [](learner::DataLoader& data_loader, py::array_t<float>& features, py::array_t<float>& labels) {

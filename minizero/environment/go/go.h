@@ -50,10 +50,9 @@ public:
     float getReward() const override { return 0.0f; }
     float getEvalScore(bool is_resign = false) const override;
     std::vector<float> getFeatures(utils::Rotation rotation = utils::Rotation::kRotationNone) const override;
-    std::vector<float> getSiameseFeatures(utils::Rotation rotation = utils::Rotation::kRotationNone) const;
     std::vector<float> getActionFeatures(const GoAction& action, utils::Rotation rotation = utils::Rotation::kRotationNone) const override;
     std::vector<float> getInfoSetGeneratorFeatures(int move_number, utils::Rotation rotation = utils::Rotation::kRotationNone) const;
-    inline int getNumInputChannels() const override { return 18; }
+    inline int getNumInputChannels() const override { return 4; }
     inline int getPolicySize() const override { return getBoardSize() * getBoardSize() + 1; }
     std::string toString() const override;
     std::string toSGFString() const;
@@ -88,8 +87,6 @@ public:
 
     // Phantom Go helper functions
     bool isCaptureMove(const GoAction& action);
-    int countStones(Player p) const;
-    static MoveInfo analyzeMove(const GoEnv& before, const GoEnv& after, const GoAction& action);
 
 protected:
     void initialize();
@@ -151,34 +148,7 @@ public:
     inline int getRotatePosition(int position, utils::Rotation rotation) const override { return utils::getPositionByRotating(rotation, position, getBoardSize()); };
     inline int getRotateAction(int action_id, utils::Rotation rotation) const override { return getRotatePosition(action_id, rotation); };
 
-    // Siamese learning methods
-    std::vector<float> getAnchor(int pos, utils::Rotation rotation = utils::Rotation::kRotationNone) const;
-    std::vector<float> getPositive(int pos, utils::Rotation rotation = utils::Rotation::kRotationNone) const;
-    std::vector<float> getNegative(int pos, utils::Rotation rotation = utils::Rotation::kRotationNone, int index = -1) const;
-
-    std::vector<GoAction> getNegativeActionHistory(int pos, int negative_id) const;
-    std::vector<GamePair<GoBitboard>> generateNegativeBitboards(const GoEnv& env, int num, bool save_all = false) const;
     std::vector<float> bitboardToFeature(const GamePair<GoBitboard>& bitboard, Player turn, utils::Rotation rotation, bool include_history) const;
-
-    // Phantom Go helper struct
-    struct MoveEvent {
-        Player mover;
-        int pos;
-        std::vector<int> captured_stones;
-    };
-
-    // Phantom Go helper functions
-    GoEnv rebuildToStep(int target_pos) const;
-    std::vector<GoEnv> rebuildFullHistory(int target_pos) const;
-    std::vector<MoveEvent> buildMoveEvents(const std::vector<GoEnv>& history) const;
-    std::unordered_set<int> getUnmovableOpponentPositions(int pos) const;
-
-private:
-    static std::pair<std::unordered_set<int>, std::unordered_set<int>> computeMustSets(
-        int move_number,
-        Player perspective,
-        const std::vector<MoveEvent>& events,
-        const std::vector<GoEnv>& history);
 };
 
 } // namespace minizero::env::go
