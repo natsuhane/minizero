@@ -103,6 +103,10 @@ extern std::string iig_discriminator_nn_type_name;
 extern std::string iig_visualizer_input_sgf;
 extern int iig_game_id;
 extern int iig_game_step;
+extern std::string iig_evaluation_player1_file_name;
+extern std::string iig_evaluation_player2_file_name;
+extern std::string iig_evaluation_discriminator1_file_name;
+extern std::string iig_evaluation_discriminator2_file_name;
 
 // environment parameters
 extern int env_board_size;

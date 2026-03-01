@@ -101,6 +101,10 @@ std::string iig_discriminator_nn_type_name = "siamese";
 std::string iig_visualizer_input_sgf = "";
 int iig_game_id = 0;
 int iig_game_step = 0;
+std::string iig_evaluation_player1_file_name = "";
+std::string iig_evaluation_player2_file_name = "";
+std::string iig_evaluation_discriminator1_file_name = "";
+std::string iig_evaluation_discriminator2_file_name = "";
 
 // environment parameters
 int env_board_size = 0;
@@ -222,6 +226,10 @@ void setConfiguration(ConfigureLoader& cl)
     cl.addParameter("iig_visualizer_input_sgf", iig_visualizer_input_sgf, "the input sgf file for web visualize tool", "IIG");
     cl.addParameter("iig_game_id", iig_game_id, "the game id for transforming sgf", "IIG");
     cl.addParameter("iig_game_step", iig_game_step, "the game step for transforming sgf", "IIG");
+    cl.addParameter("iig_evaluation_player1_file_name", iig_evaluation_player1_file_name, "the file name of player 1 model weights for IIG evaluation", "IIG");
+    cl.addParameter("iig_evaluation_player2_file_name", iig_evaluation_player2_file_name, "the file name of player 2 model weights for IIG evaluation", "IIG");
+    cl.addParameter("iig_evaluation_discriminator1_file_name", iig_evaluation_discriminator1_file_name, "the file name of discriminator 1 model weights for IIG evaluation; only used when iig_use_discriminator is true", "IIG");
+    cl.addParameter("iig_evaluation_discriminator2_file_name", iig_evaluation_discriminator2_file_name, "the file name of discriminator 2 model weights for IIG evaluation; only used when iig_use_discriminator is true", "IIG");
 
     // environment parameters
     cl.addParameter("env_board_size", env_board_size, "the size of board", "Environment");
