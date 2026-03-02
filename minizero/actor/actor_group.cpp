@@ -85,12 +85,8 @@ bool SlaveThread::doCPUJob()
 
     std::shared_ptr<BaseActor>& actor = getSharedData()->actors_[actor_id];
     int network_id = actor_id % getSharedData()->networks_.size();
-    int network_output_id = actor->getNNEvaluationBatchIndex();
-    if (network_output_id >= 0) {
-        assert(network_output_id < static_cast<int>(getSharedData()->network_outputs_[network_id].size()));
-        actor->afterNNEvaluation(getSharedData()->network_outputs_[network_id][network_output_id]);
-        if (actor->isSearchDone()) { handleSearchDone(actor_id); }
-    }
+    actor->afterNNEvaluation(getSharedData()->network_outputs_[network_id]);
+    if (actor->isSearchDone()) { handleSearchDone(actor_id); }
     actor->beforeNNEvaluation();
     return true;
 }

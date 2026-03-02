@@ -232,6 +232,30 @@ void PhantomGoEnv::sampleOneInformationSet(int seed /*= utils::Random::randInt()
     *this = sampled_env;
 }
 
+std::vector<float> PhantomGoEnv::getPlayerFeatures(utils::Rotation rotation /*= utils::Rotation::kRotationNone*/) const
+{
+    std::vector<float> features = perfect_env_.getFeatures(rotation);
+    std::vector<float> known_stone_features(2 * getBoardSize() * getBoardSize(), 0.0f);
+    env::Player our_player = getTurn();
+    env::Player opp_player = getNextPlayer(getTurn(), kPhantomGoNumPlayer);
+    auto our_know_stone_bitboard = imperfect_env_.get(our_player).getStoneBitboard().get(opp_player);
+    while (!our_know_stone_bitboard.none()) {
+        int pos = our_know_stone_bitboard._Find_first();
+        our_know_stone_bitboard.reset(pos);
+        int rotated_pos = getRotatePosition(pos, rotation);
+        known_stone_features[rotated_pos] = 1.0f;
+    }
+    auto opp_know_stone_bitboard = imperfect_env_.get(opp_player).getStoneBitboard().get(our_player);
+    while (!opp_know_stone_bitboard.none()) {
+        int pos = opp_know_stone_bitboard._Find_first();
+        opp_know_stone_bitboard.reset(pos);
+        int rotated_pos = getRotatePosition(pos, rotation);
+        known_stone_features[getBoardSize() * getBoardSize() + rotated_pos] = 1.0f;
+    }
+    features.insert(features.end(), known_stone_features.begin(), known_stone_features.end());
+    return features;
+}
+
 std::string PhantomGoEnv::toSGFString(bool with_tried /*= true*/) const
 {
     std::ostringstream oss;
@@ -264,12 +288,6 @@ PhantomGoEnv PhantomGoEnv::createSampledEnvironment(int seed) const
 {
     std::mt19937 generator(seed);
     const ImperfectGoEnv& imperfect_env = imperfect_env_.get(getTurn());
-    std::vector<PhantomGoAction> opp_legal_actions;
-    for (int pos = 0; pos < imperfect_env.getBoardSize() * imperfect_env.getBoardSize(); ++pos) {
-        PhantomGoAction action(pos, getNextPlayer(getTurn(), kPhantomGoNumPlayer));
-        if (!imperfect_env.isLegalAction(action)) { continue; }
-        opp_legal_actions.push_back(action);
-    }
 
     // play our actions
     Player turn = getTurn();
@@ -279,6 +297,7 @@ PhantomGoEnv PhantomGoEnv::createSampledEnvironment(int seed) const
         if (action.getPlayer() != turn) { continue; }
         if (imperfect_env.isPassAction(action)) { continue; }
         sampled_env.act(action);
+        sampled_env.act(PhantomGoAction(action.getActionID(), getNextPlayer(turn, kPhantomGoNumPlayer)));
     }
 
     // play known opponent stones
@@ -288,21 +307,28 @@ PhantomGoEnv PhantomGoEnv::createSampledEnvironment(int seed) const
         int pos = known_stone._Find_first();
         known_stone.reset(pos);
         sampled_env.act(PhantomGoAction(pos, getNextPlayer(turn, kPhantomGoNumPlayer)));
+        sampled_env.act(PhantomGoAction(pos, turn));
     }
 
     // play unknown opponent stones
     std::uniform_int_distribution<int> int_distribution;
-    for (int i = 0; i < remaining_opp_stones; ++i) {
+    std::vector<PhantomGoAction> opp_legal_actions;
+    for (int pos = 0; pos < imperfect_env.getBoardSize() * imperfect_env.getBoardSize(); ++pos) {
+        PhantomGoAction action(pos, getNextPlayer(getTurn(), kPhantomGoNumPlayer));
+        if (!imperfect_env.isLegalAction(action)) { continue; }
+        opp_legal_actions.push_back(action);
+    }
+    for (int i = 0; i < remaining_opp_stones && !opp_legal_actions.empty(); ++i) {
         int selected_index = int_distribution(generator) % opp_legal_actions.size();
         const PhantomGoAction& action = opp_legal_actions[selected_index];
         if (sampled_env.getPerfectEnv().isLegalAction(action) && !sampled_env.getPerfectEnv().isCaptureMove(action)) {
             sampled_env.act(action);
+            sampled_env.act(PhantomGoAction(action.getActionID(), turn));
         } else {
             --i;
         }
         opp_legal_actions[selected_index] = opp_legal_actions.back();
         opp_legal_actions.pop_back();
-        if (opp_legal_actions.empty()) { break; }
     }
     sampled_env.setTurn(turn);
 

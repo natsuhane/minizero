@@ -53,11 +53,11 @@ class SiameseNetwork(nn.Module):
         pre_embed_dim = 128
         embed_dim = 512
         hidden_channels = 64
-        board_in_channels = 4
+        self.board_in_channels = 6
 
         # Embedding networks (separate for anchor and board)
         self.anchor_embed = EmbeddingNetwork(num_input_channels, pre_embed_dim, hidden_channels, num_layers=5)
-        self.board_embed = EmbeddingNetwork(board_in_channels, pre_embed_dim, hidden_channels, num_layers=5)
+        self.board_embed = EmbeddingNetwork(self.board_in_channels, pre_embed_dim, hidden_channels, num_layers=5)
 
         # Shared trunk (the TRUE Siamese part)
         self.first_block = nn.Sequential(
@@ -144,7 +144,7 @@ class SiameseNetwork(nn.Module):
         return self.discrete_value_size
 
     def forward(self, inputs):
-        if inputs.size(1) > 4:
+        if inputs.size(1) > self.board_in_channels:
             embeddings = self.encode_anchor(inputs)
         else:
             embeddings = self.encode_board(inputs)

@@ -73,9 +73,13 @@ public:
     bool act(const PhantomGoAction& action) override;
     bool act(const std::vector<std::string>& action_string_args) override { return act(PhantomGoAction(action_string_args, getBoardSize())); }
     void sampleOneInformationSet(int seed = utils::Random::randInt()) override;
+    std::vector<float> getPlayerFeatures(utils::Rotation rotation = utils::Rotation::kRotationNone) const override;
+    std::vector<float> getDiscriminatorFeatures(utils::Rotation rotation = utils::Rotation::kRotationNone) const override { return imperfect_env_.get(getTurn()).getFeatures(rotation); }
     std::string toSGFString(bool with_tried = true) const;
     std::string infoString() const;
 
+    inline int getNumPlayerInputChannels() const { return perfect_env_.getNumInputChannels() + 2; }
+    inline int getNumDiscriminatorInputChannels() const { return imperfect_env_.get(getTurn()).getNumInputChannels(); }
     inline std::string name() const override { return kPhantomGoName + "_" + std::to_string(getBoardSize()) + "x" + std::to_string(getBoardSize()); }
     inline int getNumPlayer() const override { return kPhantomGoNumPlayer; }
     inline int getBoardSize() const { return perfect_env_.getBoardSize(); }

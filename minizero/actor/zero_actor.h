@@ -38,7 +38,7 @@ public:
     void resetSearch() override;
     Action think(bool with_play = false, bool display_board = false) override;
     void beforeNNEvaluation() override;
-    void afterNNEvaluation(const std::shared_ptr<network::NetworkOutput>& network_output) override;
+    void afterNNEvaluation(const std::vector<std::shared_ptr<network::NetworkOutput>>& network_outputs) override;
     bool isSearchDone() const override { return getMCTS()->reachMaximumSimulation(); }
     Action getSearchAction() const override { return mcts_search_data_.selected_node_->getAction(); }
     bool isResign() const override { return enable_resign_ && getMCTS()->isResign(mcts_search_data_.selected_node_); }
@@ -47,29 +47,28 @@ public:
     std::shared_ptr<Search> createSearch() override { return std::make_shared<MCTS>(tree_node_size_); }
     std::shared_ptr<MCTS> getMCTS() { return std::static_pointer_cast<MCTS>(search_); }
     const std::shared_ptr<MCTS> getMCTS() const { return std::static_pointer_cast<MCTS>(search_); }
+    const std::vector<Environment>& getInformativeStates() const { return informative_states_; }
 
 protected:
-    void resetPIMCSearch();
     void beforeDiscriminatorNNEvaluation();
-    void afterDiscriminatorNNEvaluation(const std::shared_ptr<network::NetworkOutput>& network_output);
+    void afterDiscriminatorNNEvaluation(const std::vector<std::shared_ptr<network::NetworkOutput>>& network_outputs);
     std::vector<std::pair<std::string, std::string>> getActionInfo() const override;
-    std::string getMCTSPolicy() const override { return (config::actor_use_gumbel ? getAccumulateMCTSPolicy() : getMCTS()->getSearchDistributionString()); }
+    std::string getMCTSPolicy() const override { return (config::actor_use_gumbel ? gumbel_zero_.getMCTSPolicy(getMCTS()) : getMCTS()->getSearchDistributionString()); }
     std::string getMCTSValue() const override { return std::to_string(getMCTS()->getRootNode()->getMean()); }
     std::string getEnvReward() const override;
     std::string getModelFileName() const { return (alphazero_network_ ? alphazero_network_->getNetworkFileName() : (muzero_network_ ? muzero_network_->getNetworkFileName() : "")); }
 
     virtual void step();
-    void accumulateMCTSPolicy(const std::string& policy_str, std::vector<float>& pimc_policy);
-    void setAccumulateMCTSPolicy(std::vector<float>& pimc_policy);
-    std::string getAccumulateMCTSPolicy() const { return accumulate_mcts_policy_; }
     virtual void handleSearchDone();
     virtual MCTSNode* decideActionNode();
     virtual void addNoiseToNodeChildren(MCTSNode* node);
     virtual std::vector<MCTSNode*> selection() { return (config::actor_use_gumbel ? gumbel_zero_.selection(getMCTS()) : getMCTS()->select()); }
 
     std::vector<MCTS::ActionCandidate> calculateAlphaZeroActionPolicy(const Environment& env_transition, const std::shared_ptr<network::AlphaZeroNetworkOutput>& alphazero_output, const utils::Rotation& rotation);
+    void calculatePIMCActionPolicy(MCTSNode* leaf_node, const Environment& env_transition, const std::shared_ptr<network::AlphaZeroNetworkOutput>& alphazero_output, const utils::Rotation& rotation, std::vector<int>& counts, std::vector<MCTS::ActionCandidate>& action_candidates);
     std::vector<MCTS::ActionCandidate> calculateMuZeroActionPolicy(MCTSNode* leaf_node, const std::shared_ptr<network::MuZeroNetworkOutput>& muzero_output);
     virtual Environment getEnvironmentTransition(const std::vector<MCTSNode*>& node_path);
+    bool calculateEnvironmentTransition(const std::vector<MCTSNode*>& node_path, Environment& env_transition);
 
     bool enable_resign_;
     GumbelZero gumbel_zero_;
@@ -82,18 +81,10 @@ protected:
     std::shared_ptr<network::SiameseNetwork> siamese_network_;
 
     // for pimc
-    int pimc_count_;
-    Environment env_backup_;
-    std::vector<Environment> pimc_envs_;
-    std::vector<MCTSNode> pimc_roots_;
-    std::vector<float> pimc_policy_;
-    std::vector<std::vector<MCTSNode>> pimc_children_nodes_;
-    std::string accumulate_mcts_policy_;
-
-    int info_set_count_;
+    std::vector<int> is_valid_states_;
+    std::vector<int> nn_evaluated_batch_ids_;
     std::vector<float> anchor_embeddings_;
-    std::vector<std::pair<int, float>> info_set_distances_;
-    std::vector<int> informative_state_ids_;
+    std::vector<Environment> informative_states_;
 };
 
 } // namespace minizero::actor

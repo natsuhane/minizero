@@ -59,26 +59,29 @@ bool ArenaThread::selection()
     size_t actor_id = getSharedData()->getAvailableActorIndex();
     if (actor_id >= getSharedData()->actors_.size()) { return false; }
 
-    std::shared_ptr<BaseActor>& actor = getSharedData()->actors_[actor_id];
-    if ((actor_id % 2 == 0 && actor->getEnvironment().getTurn() != getSharedData()->turn_) ||
-        (actor_id % 2 == 1 && actor->getEnvironment().getTurn() == getSharedData()->turn_)) { return true; }
-
+    std::shared_ptr<ZeroActor> actor = std::static_pointer_cast<ZeroActor>(getSharedData()->actors_[actor_id]);
     actor->beforeNNEvaluation();
+    getSharedData()->actor_stages_[actor_id] = (actor->getMCTS()->getNumSimulation() == 0 && actor->getInformativeStates().empty());
     return true;
 }
 
 void ArenaThread::evaluation()
 {
-    if (id_ >= static_cast<int>(getSharedData()->networks_.get(getSharedData()->turn_).size())) { return; }
+    if (id_ >= static_cast<int>(getSharedData()->networks_.get(env::Player::kPlayer1).size())) { return; }
 
-    std::shared_ptr<Network>& network = getSharedData()->networks_.get(getSharedData()->turn_)[id_];
-    std::shared_ptr<Network>& discriminator_network = getSharedData()->discriminator_networks_.get(getSharedData()->turn_)[id_];
-    if (network->getNetworkTypeName() == "alphazero") {
-        std::shared_ptr<AlphaZeroNetwork> az_network = std::static_pointer_cast<AlphaZeroNetwork>(network);
-        if (az_network->getBatchSize() > 0) { getSharedData()->network_outputs_[id_] = az_network->forward(); }
-        std::shared_ptr<SiameseNetwork> d_network = std::static_pointer_cast<SiameseNetwork>(discriminator_network);
-        if (d_network->getBatchSize() > 0) { getSharedData()->network_outputs_[id_] = d_network->forward(); }
-    }
+    std::shared_ptr<Network>& network1 = getSharedData()->networks_.get(env::Player::kPlayer1)[id_];
+    std::shared_ptr<AlphaZeroNetwork> az_network1 = std::static_pointer_cast<AlphaZeroNetwork>(network1);
+    if (az_network1->getBatchSize() > 0) { getSharedData()->network_outputs_.get(env::Player::kPlayer1)[id_] = az_network1->forward(); }
+    std::shared_ptr<Network>& network2 = getSharedData()->networks_.get(env::Player::kPlayer2)[id_];
+    std::shared_ptr<AlphaZeroNetwork> az_network2 = std::static_pointer_cast<AlphaZeroNetwork>(network2);
+    if (az_network2->getBatchSize() > 0) { getSharedData()->network_outputs_.get(env::Player::kPlayer2)[id_] = az_network2->forward(); }
+
+    std::shared_ptr<Network>& discriminator_network1 = getSharedData()->discriminator_networks_.get(env::Player::kPlayer1)[id_];
+    std::shared_ptr<SiameseNetwork> d_network1 = std::static_pointer_cast<SiameseNetwork>(discriminator_network1);
+    if (d_network1->getBatchSize() > 0) { getSharedData()->discriminator_network_outputs_.get(env::Player::kPlayer1)[id_] = d_network1->forward(); }
+    std::shared_ptr<Network>& discriminator_network2 = getSharedData()->discriminator_networks_.get(env::Player::kPlayer2)[id_];
+    std::shared_ptr<SiameseNetwork> d_network2 = std::static_pointer_cast<SiameseNetwork>(discriminator_network2);
+    if (d_network2->getBatchSize() > 0) { getSharedData()->discriminator_network_outputs_.get(env::Player::kPlayer2)[id_] = d_network2->forward(); }
 }
 
 bool ArenaThread::backup()
@@ -87,16 +90,16 @@ bool ArenaThread::backup()
     if (actor_id >= getSharedData()->actors_.size()) { return false; }
 
     std::shared_ptr<BaseActor>& actor = getSharedData()->actors_[actor_id];
-    if ((actor_id % 2 == 0 && actor->getEnvironment().getTurn() != getSharedData()->turn_) ||
-        (actor_id % 2 == 1 && actor->getEnvironment().getTurn() == getSharedData()->turn_)) { return true; }
-
-    int network_id = actor_id % getSharedData()->networks_.get(getSharedData()->turn_).size();
-    int network_output_id = actor->getNNEvaluationBatchIndex();
-    if (network_output_id >= 0) {
-        assert(network_output_id < static_cast<int>(getSharedData()->network_outputs_[network_id].size()));
-        actor->afterNNEvaluation(getSharedData()->network_outputs_[network_id][network_output_id]);
-        if (actor->isSearchDone()) { handleSearchDone(actor_id); }
+    int network_id = actor_id % getSharedData()->networks_.get(env::Player::kPlayer1).size();
+    env::Player nn_player = actor->getEnvironment().getTurn();
+    if (actor_id % 2 == 1) { nn_player = (nn_player == env::Player::kPlayer1 ? env::Player::kPlayer2 : env::Player::kPlayer1); }
+    int stage = getSharedData()->actor_stages_[actor_id];
+    if (stage == 0) {
+        actor->afterNNEvaluation(getSharedData()->network_outputs_.get(nn_player)[network_id]);
+    } else {
+        actor->afterNNEvaluation(getSharedData()->discriminator_network_outputs_.get(nn_player)[network_id]);
     }
+    if (actor->isSearchDone()) { handleSearchDone(actor_id); }
     return true;
 }
 
@@ -125,10 +128,12 @@ void Arena::run()
     initialize();
     while (true) {
         getSharedData()->actor_index_ = 0;
-        getSharedData()->turn_ = getSharedData()->actors_[0]->getEnvironment().getTurn();
         for (size_t i = 0; i < getSharedData()->actors_.size(); ++i) {
-            getSharedData()->actors_[i]->setNetwork(getSharedData()->networks_.get(getSharedData()->turn_)[i % getSharedData()->networks_.get(getSharedData()->turn_).size()]);
-            getSharedData()->actors_[i]->setNetwork(getSharedData()->discriminator_networks_.get(getSharedData()->turn_)[i % getSharedData()->discriminator_networks_.get(getSharedData()->turn_).size()]);
+            auto& actor = getSharedData()->actors_[i];
+            env::Player nn_player = actor->getEnvironment().getTurn();
+            if (i % 2 == 1) { nn_player = (nn_player == env::Player::kPlayer1 ? env::Player::kPlayer2 : env::Player::kPlayer1); }
+            actor->setNetwork(getSharedData()->networks_.get(nn_player)[i % getSharedData()->networks_.get(nn_player).size()]);
+            actor->setNetwork(getSharedData()->discriminator_networks_.get(nn_player)[i % getSharedData()->discriminator_networks_.get(nn_player).size()]);
         }
         for (auto& t : slave_threads_) { t->start(); }
         for (auto& t : slave_threads_) { t->finish(); }
@@ -153,7 +158,10 @@ void Arena::createNeuralNetworks()
     getSharedData()->networks_.get(env::Player::kPlayer2).resize(num_networks);
     getSharedData()->discriminator_networks_.get(env::Player::kPlayer1).resize(num_networks, nullptr);
     getSharedData()->discriminator_networks_.get(env::Player::kPlayer2).resize(num_networks, nullptr);
-    getSharedData()->network_outputs_.resize(num_networks);
+    getSharedData()->network_outputs_.get(env::Player::kPlayer1).resize(num_networks);
+    getSharedData()->network_outputs_.get(env::Player::kPlayer2).resize(num_networks);
+    getSharedData()->discriminator_network_outputs_.get(env::Player::kPlayer1).resize(num_networks);
+    getSharedData()->discriminator_network_outputs_.get(env::Player::kPlayer2).resize(num_networks);
     for (int gpu_id = 0; gpu_id < num_networks; ++gpu_id) {
         getSharedData()->networks_.get(env::Player::kPlayer1)[gpu_id] = createNetwork(config::iig_evaluation_player1_file_name, gpu_id);
         getSharedData()->networks_.get(env::Player::kPlayer2)[gpu_id] = createNetwork(config::iig_evaluation_player2_file_name, gpu_id);
@@ -169,6 +177,7 @@ void Arena::createActors()
     uint64_t tree_node_size = static_cast<uint64_t>(config::actor_num_simulation + 1) * network->getActionSize();
     for (int i = 0; i < config::zero_num_parallel_games; ++i) {
         getSharedData()->actors_.emplace_back(createActor(tree_node_size, getSharedData()->networks_.get(env::Player::kPlayer1)[i % getSharedData()->networks_.get(env::Player::kPlayer1).size()]));
+        getSharedData()->actor_stages_.push_back(0);
     }
 }
 

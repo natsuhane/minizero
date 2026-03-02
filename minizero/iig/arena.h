@@ -25,14 +25,15 @@ public:
     int getAvailableActorIndex();
     void outputGame(int actor_id);
 
-    minizero::env::Player turn_;
     MCTSPhase mcts_phase_;
     int actor_index_;
     std::mutex mutex_;
+    std::vector<int> actor_stages_;
     std::vector<std::shared_ptr<minizero::actor::BaseActor>> actors_;
     minizero::env::GamePair<std::vector<std::shared_ptr<network::Network>>> networks_;
     minizero::env::GamePair<std::vector<std::shared_ptr<network::Network>>> discriminator_networks_;
-    std::vector<std::vector<std::shared_ptr<network::NetworkOutput>>> network_outputs_;
+    minizero::env::GamePair<std::vector<std::vector<std::shared_ptr<network::NetworkOutput>>>> network_outputs_;
+    minizero::env::GamePair<std::vector<std::vector<std::shared_ptr<network::NetworkOutput>>>> discriminator_network_outputs_;
 };
 
 class ArenaThread : public utils::BaseSlaveThread {

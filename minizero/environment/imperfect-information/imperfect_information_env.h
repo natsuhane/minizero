@@ -50,11 +50,11 @@ public:
     float getReward() const override { return perfect_env_.getReward(); }
     float getEvalScore(bool is_resign = false) const override { return perfect_env_.getEvalScore(is_resign); }
     std::vector<float> getFeatures(utils::Rotation rotation = utils::Rotation::kRotationNone) const override { return getFeatures(true, rotation); }
-    std::vector<float> getFeatures(bool is_perfect, utils::Rotation rotation = utils::Rotation::kRotationNone) const { return (is_perfect ? perfect_env_.getFeatures(rotation) : imperfect_env_.get(getTurn()).getFeatures(rotation)); }
+    std::vector<float> getFeatures(bool is_perfect, utils::Rotation rotation = utils::Rotation::kRotationNone) const { return (is_perfect ? getPlayerFeatures(rotation) : getDiscriminatorFeatures(rotation)); }
     std::vector<float> getActionFeatures(const Action& action, utils::Rotation rotation = utils::Rotation::kRotationNone) const override { return getActionFeatures(action, true, rotation); }
     std::vector<float> getActionFeatures(const Action& action, bool is_perfect, utils::Rotation rotation = utils::Rotation::kRotationNone) const { return (is_perfect ? perfect_env_.getActionFeatures(action, rotation) : imperfect_env_.get(getTurn()).getActionFeatures(action, rotation)); }
     int getNumInputChannels() const override { return getNumInputChannels(true); }
-    int getNumInputChannels(bool is_perfect) const { return (is_perfect ? perfect_env_.getNumInputChannels() : imperfect_env_.get(getTurn()).getNumInputChannels()); }
+    int getNumInputChannels(bool is_perfect) const { return (is_perfect ? getNumPlayerInputChannels() : getNumDiscriminatorInputChannels()); }
     int getNumActionFeatureChannels() const override { return getNumActionFeatureChannels(true); }
     int getNumActionFeatureChannels(bool is_perfect) const { return (is_perfect ? perfect_env_.getNumActionFeatureChannels() : imperfect_env_.get(getTurn()).getNumActionFeatureChannels()); }
     int getInputChannelHeight() const override { return perfect_env_.getInputChannelHeight(); }
@@ -95,6 +95,10 @@ public:
     inline const std::vector<std::string>& getObservationHistory() const { return perfect_env_.getObservationHistory(); }
 
     virtual void sampleOneInformationSet(int seed = utils::Random::randInt()) = 0;
+    virtual std::vector<float> getPlayerFeatures(utils::Rotation rotation = utils::Rotation::kRotationNone) const = 0;
+    virtual std::vector<float> getDiscriminatorFeatures(utils::Rotation rotation = utils::Rotation::kRotationNone) const = 0;
+    virtual int getNumPlayerInputChannels() const = 0;
+    virtual int getNumDiscriminatorInputChannels() const = 0;
 
 protected:
     PerfectEnv perfect_env_;
