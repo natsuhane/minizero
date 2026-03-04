@@ -78,7 +78,7 @@ public:
     std::string toSGFString(bool with_tried = true) const;
     std::string infoString() const;
 
-    inline int getNumPlayerInputChannels() const { return perfect_env_.getNumInputChannels() + 2; }
+    inline int getNumPlayerInputChannels() const { return 6; }
     inline int getNumDiscriminatorInputChannels() const { return imperfect_env_.get(getTurn()).getNumInputChannels(); }
     inline std::string name() const override { return kPhantomGoName + "_" + std::to_string(getBoardSize()) + "x" + std::to_string(getBoardSize()); }
     inline int getNumPlayer() const override { return kPhantomGoNumPlayer; }

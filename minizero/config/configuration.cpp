@@ -105,6 +105,8 @@ std::string iig_evaluation_player1_file_name = "";
 std::string iig_evaluation_player2_file_name = "";
 std::string iig_evaluation_discriminator1_file_name = "";
 std::string iig_evaluation_discriminator2_file_name = "";
+int iig_evaluation_player1_pimc_repeat = 5;
+int iig_evaluation_player2_pimc_repeat = 5;
 
 // environment parameters
 int env_board_size = 0;
@@ -230,6 +232,8 @@ void setConfiguration(ConfigureLoader& cl)
     cl.addParameter("iig_evaluation_player2_file_name", iig_evaluation_player2_file_name, "the file name of player 2 model weights for IIG evaluation", "IIG");
     cl.addParameter("iig_evaluation_discriminator1_file_name", iig_evaluation_discriminator1_file_name, "the file name of discriminator 1 model weights for IIG evaluation; only used when iig_use_discriminator is true", "IIG");
     cl.addParameter("iig_evaluation_discriminator2_file_name", iig_evaluation_discriminator2_file_name, "the file name of discriminator 2 model weights for IIG evaluation; only used when iig_use_discriminator is true", "IIG");
+    cl.addParameter("iig_evaluation_player1_pimc_repeat", iig_evaluation_player1_pimc_repeat, "the number of PIMC trees for player 1 in IIG evaluation", "IIG");
+    cl.addParameter("iig_evaluation_player2_pimc_repeat", iig_evaluation_player2_pimc_repeat, "the number of PIMC trees for player 2 in IIG evaluation", "IIG");
 
     // environment parameters
     cl.addParameter("env_board_size", env_board_size, "the size of board", "Environment");

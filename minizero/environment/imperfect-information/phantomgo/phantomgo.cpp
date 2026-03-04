@@ -234,6 +234,13 @@ void PhantomGoEnv::sampleOneInformationSet(int seed /*= utils::Random::randInt()
 
 std::vector<float> PhantomGoEnv::getPlayerFeatures(utils::Rotation rotation /*= utils::Rotation::kRotationNone*/) const
 {
+    /* 6 channels:
+        0. our all stone
+        1. opponent all stone
+        2-3. turn
+        4. we known opp's stone
+        5. opp knowns our stone
+    */
     std::vector<float> features = perfect_env_.getFeatures(rotation);
     std::vector<float> known_stone_features(2 * getBoardSize() * getBoardSize(), 0.0f);
     env::Player our_player = getTurn();
@@ -291,6 +298,7 @@ PhantomGoEnv PhantomGoEnv::createSampledEnvironment(int seed) const
 
     // play our actions
     Player turn = getTurn();
+    Player next_turn = getNextPlayer(turn, kPhantomGoNumPlayer);
     PhantomGoEnv sampled_env;
     for (size_t i = 0; i < imperfect_env.getActionHistory().size(); ++i) {
         const PhantomGoAction& action = imperfect_env.getActionHistory()[i];
@@ -301,12 +309,12 @@ PhantomGoEnv PhantomGoEnv::createSampledEnvironment(int seed) const
     }
 
     // play known opponent stones
-    GoBitboard known_stone = imperfect_env.getStoneBitboard().get(getNextPlayer(turn, kPhantomGoNumPlayer));
+    GoBitboard known_stone = imperfect_env.getStoneBitboard().get(next_turn);
     int remaining_opp_stones = imperfect_env.getNumOpponentStones() - known_stone.count();
     while (!known_stone.none()) {
         int pos = known_stone._Find_first();
         known_stone.reset(pos);
-        sampled_env.act(PhantomGoAction(pos, getNextPlayer(turn, kPhantomGoNumPlayer)));
+        sampled_env.act(PhantomGoAction(pos, next_turn));
         sampled_env.act(PhantomGoAction(pos, turn));
     }
 
@@ -314,7 +322,7 @@ PhantomGoEnv PhantomGoEnv::createSampledEnvironment(int seed) const
     std::uniform_int_distribution<int> int_distribution;
     std::vector<PhantomGoAction> opp_legal_actions;
     for (int pos = 0; pos < imperfect_env.getBoardSize() * imperfect_env.getBoardSize(); ++pos) {
-        PhantomGoAction action(pos, getNextPlayer(getTurn(), kPhantomGoNumPlayer));
+        PhantomGoAction action(pos, next_turn);
         if (!imperfect_env.isLegalAction(action)) { continue; }
         opp_legal_actions.push_back(action);
     }

@@ -29,8 +29,19 @@ void ArenaSharedData::outputGame(int actor_id)
     const std::shared_ptr<BaseActor>& actor = actors_[actor_id];
 
     actor->getActionInfoHistory().clear();
-    oss << actor->getRecord({{"P1", networks_.get(actor_id % 2 == 0 ? env::Player::kPlayer1 : env::Player::kPlayer2)[0]->getNetworkFileName()},
-                             {"P2", networks_.get(actor_id % 2 == 1 ? env::Player::kPlayer1 : env::Player::kPlayer2)[0]->getNetworkFileName()},
+    std::string p1_nn_name = networks_.get(actor_id % 2 == 0 ? env::Player::kPlayer1 : env::Player::kPlayer2)[0]->getNetworkFileName();
+    std::string p2_nn_name = networks_.get(actor_id % 2 == 1 ? env::Player::kPlayer1 : env::Player::kPlayer2)[0]->getNetworkFileName();
+    std::string p1_dnn_name = discriminator_networks_.get(actor_id % 2 == 0 ? env::Player::kPlayer1 : env::Player::kPlayer2)[0]->getNetworkFileName();
+    std::string p2_dnn_name = discriminator_networks_.get(actor_id % 2 == 1 ? env::Player::kPlayer1 : env::Player::kPlayer2)[0]->getNetworkFileName();
+    std::string p1_pimc_repeat = std::to_string(actor_id % 2 == 0 ? config::iig_evaluation_player1_pimc_repeat : config::iig_evaluation_player2_pimc_repeat);
+    std::string p2_pimc_repeat = std::to_string(actor_id % 2 == 1 ? config::iig_evaluation_player1_pimc_repeat : config::iig_evaluation_player2_pimc_repeat);
+
+    oss << actor->getRecord({{"P1", p1_nn_name},
+                             {"P2", p2_nn_name},
+                             {"P1_DNN", p1_dnn_name},
+                             {"P2_DNN", p2_dnn_name},
+                             {"P1_PIMC_REPEAT", p1_pimc_repeat},
+                             {"P2_PIMC_REPEAT", p2_pimc_repeat},
                              {"T", utils::TimeSystem::getTimeString("Y/m/d H:i:s.f")}});
 
     std::lock_guard lock(mutex_);
@@ -132,6 +143,7 @@ void Arena::run()
             auto& actor = getSharedData()->actors_[i];
             env::Player nn_player = actor->getEnvironment().getTurn();
             if (i % 2 == 1) { nn_player = (nn_player == env::Player::kPlayer1 ? env::Player::kPlayer2 : env::Player::kPlayer1); }
+            std::static_pointer_cast<ZeroActor>(actor)->setPIMCRepeat(i % 2 == 0 ? config::iig_evaluation_player1_pimc_repeat : config::iig_evaluation_player2_pimc_repeat);
             actor->setNetwork(getSharedData()->networks_.get(nn_player)[i % getSharedData()->networks_.get(nn_player).size()]);
             actor->setNetwork(getSharedData()->discriminator_networks_.get(nn_player)[i % getSharedData()->discriminator_networks_.get(nn_player).size()]);
         }

@@ -64,7 +64,7 @@ void ZeroActor::beforeNNEvaluation()
     if (alphazero_network_) {
         feature_rotation_ = config::actor_use_random_rotation_features ? static_cast<utils::Rotation>(utils::Random::randInt() % static_cast<int>(utils::Rotation::kRotateSize)) : utils::Rotation::kRotationNone;
         is_valid_states_.clear();
-        for (int i = 0; i < config::actor_pimc_repeat; ++i) {
+        for (int i = 0; i < pimc_repeat_; ++i) {
             Environment env_transition = informative_states_[i];
             is_valid_states_.push_back(calculateEnvironmentTransition(mcts_search_data_.node_path_, env_transition));
             if (is_valid_states_.back()) {
@@ -95,7 +95,7 @@ void ZeroActor::afterNNEvaluation(const std::vector<std::shared_ptr<network::Net
         if (config::iig_use_discriminator) {
             afterDiscriminatorNNEvaluation(network_outputs);
         } else {
-            for (int i = 0; i < config::actor_pimc_repeat; ++i) {
+            for (int i = 0; i < pimc_repeat_; ++i) {
                 informative_states_.push_back(env_);
                 informative_states_.back().sampleOneInformationSet(i);
             }
@@ -113,7 +113,7 @@ void ZeroActor::afterNNEvaluation(const std::vector<std::shared_ptr<network::Net
             counts.push_back(0);
         }
         float value_sum = 0.0f, value_count = 0.0f;
-        for (int i = 0; i < config::actor_pimc_repeat; ++i) {
+        for (int i = 0; i < pimc_repeat_; ++i) {
             if (!is_valid_states_[i]) { continue; }
             Environment env_transition = informative_states_[i];
             calculateEnvironmentTransition(node_path, env_transition);
@@ -166,12 +166,12 @@ void ZeroActor::setNetwork(const std::shared_ptr<network::Network>& network)
 void ZeroActor::beforeDiscriminatorNNEvaluation()
 {
     if (anchor_embeddings_.empty()) {
-        nn_evaluated_batch_ids_.push_back(siamese_network_->pushBackAnchor(env_.getFeatures(false)));
+        nn_evaluated_batch_ids_.push_back(siamese_network_->pushBackAnchor(env_.getDiscriminatorFeatures()));
     } else {
         for (int i = 0; i < config::iig_max_infoset_size; ++i) {
             Environment env = env_;
             env.sampleOneInformationSet(i);
-            nn_evaluated_batch_ids_.push_back(siamese_network_->pushBackBoard(env.getFeatures(true)));
+            nn_evaluated_batch_ids_.push_back(siamese_network_->pushBackBoard(env.getPlayerFeatures()));
         }
     }
 }
@@ -189,7 +189,7 @@ void ZeroActor::afterDiscriminatorNNEvaluation(const std::vector<std::shared_ptr
             distances.push_back(std::make_pair(i, dist));
         }
         std::sort(distances.begin(), distances.end(), [](const std::pair<int, float>& a, const std::pair<int, float>& b) { return a.second < b.second; });
-        for (int i = 0; i < config::actor_pimc_repeat && i < static_cast<int>(distances.size()); ++i) {
+        for (int i = 0; i < pimc_repeat_ && i < static_cast<int>(distances.size()); ++i) {
             informative_states_.push_back(env_);
             informative_states_.back().sampleOneInformationSet(distances[i].first);
         }
@@ -339,7 +339,7 @@ bool ZeroActor::calculateEnvironmentTransition(const std::vector<MCTSNode*>& nod
         if (env_transition.isLegalAction(action)) {
             env_transition.act(action);
             env::Player turn = env_transition.getTurn();
-            env_transition.act(Action(action.getActionID(), action.nextPlayer())); // TODO: add a new getFeature function for reveal known bitboard?? (maple)
+            if (!env_transition.getPerfectEnv().isPassAction(action)) { env_transition.act(Action(action.getActionID(), action.nextPlayer())); } // TODO: add a new getFeature function for reveal known bitboard?? (maple)
             env_transition.setTurn(turn);
         } else {
             return false;

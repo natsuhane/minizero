@@ -230,9 +230,9 @@ void DataLoaderThread::setSiameseTrainingData(int batch_index)
     Environment sampled_env = env;
     sampled_env.sampleOneInformationSet(Random::randInt() % config::actor_pimc_repeat);
 
-    std::vector<float> anchor = env.getFeatures(false, rotation);
-    std::vector<float> positive = env.getFeatures(true, rotation);
-    std::vector<float> negative = sampled_env.getFeatures(true, rotation);
+    std::vector<float> anchor = env.getDiscriminatorFeatures(rotation);
+    std::vector<float> positive = env.getPlayerFeatures(rotation);
+    std::vector<float> negative = sampled_env.getPlayerFeatures(rotation);
 
     std::copy(anchor.begin(), anchor.end(), getSharedData()->getDataPtr()->anchor_ + anchor.size() * batch_index);
     std::copy(positive.begin(), positive.end(), getSharedData()->getDataPtr()->positive_ + positive.size() * batch_index);

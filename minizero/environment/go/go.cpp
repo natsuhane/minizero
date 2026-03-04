@@ -803,9 +803,9 @@ GamePair<float> GoEnv::calculateTrompTaylorTerritory() const
         // check is surrounded by only one's color
         GoBitboard flood_fill_bitboard = floodFillBitBoard(pos, empty_stone_bitboard);
         GoBitboard surrounding_bitboard = dilateBitboard(flood_fill_bitboard) & ~flood_fill_bitboard;
-        if ((surrounding_bitboard & ~stone_bitboard_.get(Player::kPlayer1)).none()) {
+        if (!stone_bitboard_.get(Player::kPlayer1).none() && (surrounding_bitboard & ~stone_bitboard_.get(Player::kPlayer1)).none()) {
             territory.get(Player::kPlayer1) += flood_fill_bitboard.count();
-        } else if ((surrounding_bitboard & ~stone_bitboard_.get(Player::kPlayer2)).none()) {
+        } else if (!stone_bitboard_.get(Player::kPlayer2).none() && (surrounding_bitboard & ~stone_bitboard_.get(Player::kPlayer2)).none()) {
             territory.get(Player::kPlayer2) += flood_fill_bitboard.count();
         }
 

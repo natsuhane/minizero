@@ -26,7 +26,8 @@ public:
 class ZeroActor : public BaseActor {
 public:
     ZeroActor(uint64_t tree_node_size)
-        : tree_node_size_(tree_node_size)
+        : tree_node_size_(tree_node_size),
+          pimc_repeat_(config::actor_pimc_repeat)
     {
         alphazero_network_ = nullptr;
         muzero_network_ = nullptr;
@@ -48,6 +49,8 @@ public:
     std::shared_ptr<MCTS> getMCTS() { return std::static_pointer_cast<MCTS>(search_); }
     const std::shared_ptr<MCTS> getMCTS() const { return std::static_pointer_cast<MCTS>(search_); }
     const std::vector<Environment>& getInformativeStates() const { return informative_states_; }
+
+    inline void setPIMCRepeat(int pimc_repeat) { pimc_repeat_ = pimc_repeat; }
 
 protected:
     void beforeDiscriminatorNNEvaluation();
@@ -81,6 +84,7 @@ protected:
     std::shared_ptr<network::SiameseNetwork> siamese_network_;
 
     // for pimc
+    int pimc_repeat_;
     std::vector<int> is_valid_states_;
     std::vector<int> nn_evaluated_batch_ids_;
     std::vector<float> anchor_embeddings_;

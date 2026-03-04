@@ -118,7 +118,7 @@ public:
         Env env;
         const auto& action_pairs_ = BaseEnvLoader<Action, Env>::action_pairs_;
         for (int i = 0; i < std::min(pos, static_cast<int>(action_pairs_.size())); ++i) { env.act(action_pairs_[i].first); }
-        return env.getFeatures(is_perfect, rotation);
+        return env.getPlayerFeatures(rotation);
     }
 
     virtual std::pair<std::vector<float>, std::vector<float>> getISGeneratorFeaturesAndLabel(const int pos, utils::Rotation rotation = utils::Rotation::kRotationNone) const = 0;
