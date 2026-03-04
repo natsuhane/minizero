@@ -49,9 +49,9 @@ protected:
     virtual void runEnvTest();
     virtual void runRemoveObs();
     virtual void runRecoverObs();
-    void runDataSet();
     void runVisualizeSgf();
     void runEvaluator();
+    void runIIGArena();
 
     std::map<std::string, std::shared_ptr<BaseFunction>> function_map_;
 };

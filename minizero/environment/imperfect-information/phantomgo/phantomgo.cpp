@@ -118,6 +118,7 @@ std::vector<float> ImperfectGoEnv::getFeatures(utils::Rotation rotation /*= util
         }
     }
     for (int i = 0; i < 8; ++i) { // 16~23 channels
+        // we only update tried_pos_history_ after we successfully take action, so the latest tried_pos is not in the history yet, we need to consider it separately
         int index = static_cast<int>(tried_pos_history_.size()) - i;
         if (index < 0 || index >= static_cast<int>(tried_pos_history_.size())) { break; }
         const GoBitboard& past_tried_pos = (i == 0 ? tried_pos_ : tried_pos_history_[index]);

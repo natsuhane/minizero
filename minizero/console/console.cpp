@@ -35,17 +35,23 @@ Console::Console()
     RegisterFunction("pv_string", this, &Console::cmdPVString);
     RegisterFunction("game_string", this, &Console::cmdGameString);
     RegisterFunction("load_model", this, &Console::cmdLoadModel);
+    RegisterFunction("load_game_string", this, &Console::cmdLoadGameString);
+    RegisterFunction("s_value", this, &Console::cmdSiameseValue);
     RegisterFunction("get_conf_str", this, &Console::cmdGetConfigString);
 }
 
 void Console::initialize()
 {
-    if (!network_) { network_ = createNetwork(config::nn_file_name, 0); }
+    if (!network_) {
+        network_ = createNetwork(config::nn_file_name, 0);
+        discriminator_network_ = createNetwork(config::iig_discriminator_file_name, 0);
+    }
     if (!actor_) {
         uint64_t tree_node_size = static_cast<uint64_t>(config::actor_num_simulation + 1) * network_->getActionSize();
         actor_ = actor::createActor(tree_node_size, network_);
     }
     actor_->setNetwork(network_);
+    actor_->setNetwork(discriminator_network_);
 
     // forward the network several times to warmup since the first few forwards requires some initialization time
     const int num_warmup_forward = 3;
@@ -143,6 +149,7 @@ void Console::cmdPlay(const std::vector<std::string>& args)
     std::vector<std::string> act_args;
     for (unsigned int i = 1; i < args.size(); i++) { act_args.push_back(args[i]); }
     if (!actor_->act(act_args) && !actor_->isEnvTerminal()) { return reply(ConsoleResponse::kFail, "Invalid action: \"" + action_string + "\""); }
+    std::cerr << actor_->getEnvironment().toString() << std::endl;
     reply(ConsoleResponse::kSuccess, "");
 }
 
@@ -164,6 +171,7 @@ void Console::cmdGenmove(const std::vector<std::string>& args)
     const Action action = actor_->think((args[0] == "genmove" ? true : false), true);
     std::cerr << "Spent Time = " << (utils::TimeSystem::getLocalTime() - start_ptime).total_milliseconds() / 1000.0f << " (s)" << std::endl;
     if (actor_->isResign()) { return reply(ConsoleResponse::kSuccess, "Resign"); }
+    std::cerr << actor_->getEnvironment().toString() << std::endl;
 
     reply(ConsoleResponse::kSuccess, action.toConsoleString());
 }
@@ -251,6 +259,111 @@ void Console::cmdLoadModel(const std::vector<std::string>& args)
     minizero::config::nn_file_name = args[1];
     network_ = nullptr;
     initialize();
+    reply(ConsoleResponse::kSuccess, "");
+}
+
+void Console::cmdLoadGameString(const std::vector<std::string>& args)
+{
+    if (!checkArgument(args, 2, 2)) { return; }
+    EnvironmentLoader env_loader;
+    if (!env_loader.loadFromString(args[1])) { return reply(ConsoleResponse::kFail, "Failed to load game string"); }
+    actor_->reset();
+    for (const auto& action : env_loader.getActionPairs()) {
+        actor_->act(action.first);
+        std::cerr << "Played: " << env::playerToChar(action.first.getPlayer()) << " " << action.first.toConsoleString() << std::endl;
+        std::cerr << actor_->getEnvironment().toString() << std::endl;
+        std::cerr << std::endl;
+    }
+    reply(ConsoleResponse::kSuccess, "\n" + actor_->getEnvironment().toString());
+}
+
+void Console::cmdSiameseValue(const std::vector<std::string>& args)
+{
+    if (!checkArgument(args, 1, 1)) { return; }
+
+    std::shared_ptr<SiameseNetwork> network = std::static_pointer_cast<SiameseNetwork>(discriminator_network_);
+    utils::Rotation rotation = config::actor_use_random_rotation_features ? static_cast<utils::Rotation>(utils::Random::randInt() % static_cast<int>(utils::Rotation::kRotateSize)) : utils::Rotation::kRotationNone;
+    std::vector<float> anchor = actor_->getEnvironment().getFeatures(false, rotation);  // 34
+    std::vector<float> positive = actor_->getEnvironment().getFeatures(true, rotation); // 4
+    network->pushBackAnchor(anchor);
+    auto res = network->forward();
+    auto anchor_emb = std::static_pointer_cast<SiameseNetworkOutput>(res[0])->embeddings_;
+
+    network->pushBackBoard(positive);
+    for (int i = 0; i < 100; ++i) {
+        Environment env_copy = actor_->getEnvironment();
+        env_copy.sampleOneInformationSet(i);
+        std::vector<float> negative = env_copy.getFeatures(true, rotation);
+        network->pushBackBoard(negative);
+    }
+    res = network->forward();
+    auto positive_emb = std::static_pointer_cast<SiameseNetworkOutput>(res[0])->embeddings_;
+    std::cerr << "Positive Distance: " << utils::distance(anchor_emb, positive_emb) << std::endl
+              << std::endl;
+
+    // index, distance
+    std::vector<std::pair<int, float>> all_index;
+    for (int i = 0; i < 100; ++i) {
+        Environment env_copy = actor_->getEnvironment();
+        env_copy.sampleOneInformationSet(i);
+        auto negative_emb = std::static_pointer_cast<SiameseNetworkOutput>(res[i + 1])->embeddings_;
+        float dist = utils::distance(anchor_emb, negative_emb);
+        all_index.push_back(std::make_pair(i, dist));
+    }
+    std::vector<int> top_n = {5, 10, 20, 50, 100};
+    for (auto n : top_n) {
+        std::cerr << "Top " << n << " Negative Distance: " << std::endl;
+        float min = std::numeric_limits<float>::max(), max = std::numeric_limits<float>::lowest(), sum = 0.0f;
+        std::vector<float> tmp;
+        for (size_t i = 0; i < n && i < all_index.size(); ++i) {
+            float dist = all_index[i].second;
+            min = std::min(min, dist);
+            max = std::max(max, dist);
+            sum += dist;
+            tmp.push_back(dist);
+        }
+        std::cerr << "\tMin: " << min << "\tMax: " << max << "\tAvg: " << sum / n << "\tDev: " << utils::stddev(tmp) << std::endl;
+    }
+
+    std::sort(all_index.begin(), all_index.end(), [](const std::pair<int, float>& a, const std::pair<int, float>& b) {
+        return a.second < b.second;
+    });
+
+    std::vector<std::vector<std::string>> board_str;
+    std::vector<std::string> dist_str;
+    for (size_t i = 0; i < 5 && i < all_index.size(); ++i) {
+        auto negative_emb = std::static_pointer_cast<SiameseNetworkOutput>(res[all_index[i].first + 1])->embeddings_;
+        Environment env_copy = actor_->getEnvironment();
+        env_copy.sampleOneInformationSet(all_index[i].first);
+        board_str.push_back(utils::stringToVector(env_copy.toString(), "\n"));
+        dist_str.push_back(std::to_string(utils::distance(anchor_emb, negative_emb)));
+    }
+    std::ostringstream oss;
+    for (size_t i = 0; i < board_str[0].size(); ++i) {
+        for (auto& str : board_str) { oss << str[i] << "    "; }
+        oss << std::endl;
+    }
+    oss << "Negative Distance: \n";
+    for (auto& str : dist_str) { oss << str << "\t\t\t"; }
+    std::cerr << oss.str() << std::endl;
+
+    board_str.clear();
+    dist_str.clear();
+    for (size_t i = 0; i < 5 && i < all_index.size(); ++i) {
+        auto negative_emb = std::static_pointer_cast<SiameseNetworkOutput>(res[all_index[all_index.size() - 1 - i].first + 1])->embeddings_;
+        Environment env_copy = actor_->getEnvironment();
+        env_copy.sampleOneInformationSet(all_index[all_index.size() - 1 - i].first);
+        board_str.push_back(utils::stringToVector(env_copy.toString(), "\n"));
+        dist_str.push_back(std::to_string(utils::distance(anchor_emb, negative_emb)));
+    }
+    oss.str("");
+    for (size_t i = 0; i < board_str[0].size(); ++i) {
+        for (auto& str : board_str) { oss << str[i] << "    "; }
+        oss << std::endl;
+    }
+    oss << "Negative Distance: \n";
+    for (auto& str : dist_str) { oss << str << "\t\t\t"; }
+    std::cerr << oss.str() << std::endl;
     reply(ConsoleResponse::kSuccess, "");
 }
 

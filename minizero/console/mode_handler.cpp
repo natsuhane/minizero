@@ -1,9 +1,9 @@
 #include "mode_handler.h"
 #include "actor_group.h"
 #include "alphazero_network.h"
+#include "arena.h"
 #include "console.h"
 #include "create_network.h"
-#include "data_generator.h"
 #include "evaluator.h"
 #include "git_info.h"
 #include "data_generator.h"
@@ -41,9 +41,9 @@ ModeHandler::ModeHandler()
     RegisterFunction("env_test", this, &ModeHandler::runEnvTest);
     RegisterFunction("remove_obs", this, &ModeHandler::runRemoveObs);
     RegisterFunction("recover_obs", this, &ModeHandler::runRecoverObs);
-    RegisterFunction("run", this, &ModeHandler::runDataSet);
     RegisterFunction("visualize_sgf", this, &ModeHandler::runVisualizeSgf);
     RegisterFunction("evaluator", this, &ModeHandler::runEvaluator);
+    RegisterFunction("iig_arena", this, &ModeHandler::runIIGArena);
 }
 
 void ModeHandler::run(int argc, char* argv[])
@@ -223,19 +223,6 @@ void ModeHandler::runRecoverObs()
 #endif
 }
 
-void ModeHandler::runDataSet()
-{
-    iig::DataGenerator data_generator;
-    data_generator.run();
-    return;
-}
-
-struct ISQueueItem {
-    Environment env_;
-    float acc_prob_;
-    std::vector<float> probs_;
-};
-
 // for info set generator
 void ModeHandler::runVisualizeSgf()
 {
@@ -311,6 +298,12 @@ void ModeHandler::runEvaluator()
 {
     iig::Evaluator evaluator;
     evaluator.run();
+}
+
+void ModeHandler::runIIGArena()
+{
+    iig::Arena arena;
+    arena.run();
 }
 
 } // namespace minizero::console
