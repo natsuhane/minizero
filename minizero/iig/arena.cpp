@@ -143,7 +143,8 @@ void Arena::run()
             auto& actor = getSharedData()->actors_[i];
             env::Player nn_player = actor->getEnvironment().getTurn();
             if (i % 2 == 1) { nn_player = (nn_player == env::Player::kPlayer1 ? env::Player::kPlayer2 : env::Player::kPlayer1); }
-            std::static_pointer_cast<ZeroActor>(actor)->setPIMCRepeat(i % 2 == 0 ? config::iig_evaluation_player1_pimc_repeat : config::iig_evaluation_player2_pimc_repeat);
+            int pimc_count = ((i % 2 == 0 && nn_player == env::Player::kPlayer1 || i % 2 == 1 && nn_player == env::Player::kPlayer2) ? config::iig_evaluation_player1_pimc_repeat : config::iig_evaluation_player2_pimc_repeat);
+            std::static_pointer_cast<ZeroActor>(actor)->setPIMCRepeat(pimc_count);
             actor->setNetwork(getSharedData()->networks_.get(nn_player)[i % getSharedData()->networks_.get(nn_player).size()]);
             actor->setNetwork(getSharedData()->discriminator_networks_.get(nn_player)[i % getSharedData()->discriminator_networks_.get(nn_player).size()]);
         }

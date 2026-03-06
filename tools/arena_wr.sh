@@ -7,10 +7,10 @@ fi
 
 for dir in "$@"; do
     echo "$dir:"
-    for file in $(ls $dir/*.sgf | sort -V); do
+    for file in $(ls -rt $dir/*.sgf); do
         tac $file \
             | grep -oP 'RE\[[10\.-]+\].*?(?=;B\[(?:[0-9]|[1-9][0-9])\])' \
-            | sed 's/1.000000/1/g;s/OBS\[\]SZ\[[0-9]\]KM\[1\]EV\[\]//g;s/ //g' | sed 's/\[/ /g;s/\]/ /g' | awk ' BEGIN {
+            | sed 's/1.000000/1/g;s/OBS\[\]//g;s/EV\[\]//g;s/ //g' | sed 's/\[/ /g;s/\]/ /g' | awk -v file=$(echo $file | awk -F "/" '{ print $NF; }') 'BEGIN {
                 total = 0;
                 first_name = second_name = "";
             }{
@@ -37,6 +37,8 @@ for dir in "$@"; do
                         p2_pimc_repeat = value;
                     } else if(key == "RE") {
                         re = value;
+                    } else if(key == "SZ") {
+                        board_size = value;
                     }
                 }
                 if(p1_dnn == "") { p1_dnn = p1; }
@@ -76,11 +78,11 @@ for dir in "$@"; do
                 wrB = (BW[first_name] + (BD[first_name]) / 2) * 100 / totalB;
                 wrW = (WW[first_name] + (WD[first_name]) / 2) * 100 / totalW;
 
-                printf "%6.2f/%3d %6.2f/%3d %6.2f/%3d   %-20s %-20s\n",
+                printf "%6.2f/%3d %6.2f/%3d %6.2f/%3d   %-20s %-20s (%dx%d)   %s\n",
                         wr, total,
                         wrB, totalB,
                         wrW, totalW,
-                        first_name, second_name;
+                        first_name, second_name, board_size, board_size, file;
                 # print wr"/"total, wrB"/"totalB, wrW"/"totalW, first_name, second_name;
             }'
     done
