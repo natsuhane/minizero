@@ -108,6 +108,7 @@ extern int iig_game_step;
 extern bool iig_use_tsl;
 extern int iig_tsl_transition_iteration;
 extern int iig_tsl_end_iteration;
+extern std::string iig_arena_tag;
 extern std::string iig_evaluation_player1_file_name;
 extern std::string iig_evaluation_player2_file_name;
 extern std::string iig_evaluation_discriminator1_file_name;

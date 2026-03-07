@@ -23,31 +23,6 @@ int ArenaSharedData::getAvailableActorIndex()
     return (actor_index_ < static_cast<int>(actors_.size()) ? actor_index_++ : actors_.size());
 }
 
-void ArenaSharedData::outputGame(int actor_id)
-{
-    std::ostringstream oss;
-    const std::shared_ptr<BaseActor>& actor = actors_[actor_id];
-
-    actor->getActionInfoHistory().clear();
-    std::string p1_nn_name = networks_.get(actor_id % 2 == 0 ? env::Player::kPlayer1 : env::Player::kPlayer2)[0]->getNetworkFileName();
-    std::string p2_nn_name = networks_.get(actor_id % 2 == 1 ? env::Player::kPlayer1 : env::Player::kPlayer2)[0]->getNetworkFileName();
-    std::string p1_dnn_name = discriminator_networks_.get(actor_id % 2 == 0 ? env::Player::kPlayer1 : env::Player::kPlayer2)[0]->getNetworkFileName();
-    std::string p2_dnn_name = discriminator_networks_.get(actor_id % 2 == 1 ? env::Player::kPlayer1 : env::Player::kPlayer2)[0]->getNetworkFileName();
-    std::string p1_pimc_repeat = std::to_string(actor_id % 2 == 0 ? config::iig_evaluation_player1_pimc_repeat : config::iig_evaluation_player2_pimc_repeat);
-    std::string p2_pimc_repeat = std::to_string(actor_id % 2 == 1 ? config::iig_evaluation_player1_pimc_repeat : config::iig_evaluation_player2_pimc_repeat);
-
-    oss << actor->getRecord({{"P1", p1_nn_name},
-                             {"P2", p2_nn_name},
-                             {"P1_DNN", p1_dnn_name},
-                             {"P2_DNN", p2_dnn_name},
-                             {"P1_PIMC_REPEAT", p1_pimc_repeat},
-                             {"P2_PIMC_REPEAT", p2_pimc_repeat},
-                             {"T", utils::TimeSystem::getTimeString("Y/m/d H:i:s.f")}});
-
-    std::lock_guard lock(mutex_);
-    std::cout << oss.str() << std::endl;
-}
-
 void ArenaThread::initialize()
 {
     int seed = config::program_auto_seed ? std::random_device()() : config::program_seed + id_;
@@ -69,47 +44,34 @@ bool ArenaThread::selection()
 {
     size_t actor_id = getSharedData()->getAvailableActorIndex();
     if (actor_id >= getSharedData()->actors_.size()) { return false; }
+    if (getSharedData()->run_mcts_[actor_id] == 0) { return true; }
 
     std::shared_ptr<ZeroActor> actor = std::static_pointer_cast<ZeroActor>(getSharedData()->actors_[actor_id]);
     actor->beforeNNEvaluation();
-    getSharedData()->actor_stages_[actor_id] = (actor->getMCTS()->getNumSimulation() == 0 && actor->getInformativeStates().empty());
     return true;
 }
 
 void ArenaThread::evaluation()
 {
-    if (id_ >= static_cast<int>(getSharedData()->networks_.get(env::Player::kPlayer1).size())) { return; }
+    if (id_ >= static_cast<int>(getSharedData()->networks_.size())) { return; }
 
-    std::shared_ptr<Network>& network1 = getSharedData()->networks_.get(env::Player::kPlayer1)[id_];
-    std::shared_ptr<AlphaZeroNetwork> az_network1 = std::static_pointer_cast<AlphaZeroNetwork>(network1);
-    if (az_network1->getBatchSize() > 0) { getSharedData()->network_outputs_.get(env::Player::kPlayer1)[id_] = az_network1->forward(); }
-    std::shared_ptr<Network>& network2 = getSharedData()->networks_.get(env::Player::kPlayer2)[id_];
-    std::shared_ptr<AlphaZeroNetwork> az_network2 = std::static_pointer_cast<AlphaZeroNetwork>(network2);
-    if (az_network2->getBatchSize() > 0) { getSharedData()->network_outputs_.get(env::Player::kPlayer2)[id_] = az_network2->forward(); }
+    std::shared_ptr<AlphaZeroNetwork> az_network = std::static_pointer_cast<AlphaZeroNetwork>(getSharedData()->networks_[id_]);
+    std::shared_ptr<SiameseNetwork> d_network = std::static_pointer_cast<SiameseNetwork>(getSharedData()->discriminator_networks_[id_]);
+    assert(az_network->getBatchSize() * d_network->getBatchSize() == 0 && (az_network->getBatchSize() > 0 || d_network->getBatchSize() > 0)); // only one of them should have batch size > 0
 
-    std::shared_ptr<Network>& discriminator_network1 = getSharedData()->discriminator_networks_.get(env::Player::kPlayer1)[id_];
-    std::shared_ptr<SiameseNetwork> d_network1 = std::static_pointer_cast<SiameseNetwork>(discriminator_network1);
-    if (d_network1->getBatchSize() > 0) { getSharedData()->discriminator_network_outputs_.get(env::Player::kPlayer1)[id_] = d_network1->forward(); }
-    std::shared_ptr<Network>& discriminator_network2 = getSharedData()->discriminator_networks_.get(env::Player::kPlayer2)[id_];
-    std::shared_ptr<SiameseNetwork> d_network2 = std::static_pointer_cast<SiameseNetwork>(discriminator_network2);
-    if (d_network2->getBatchSize() > 0) { getSharedData()->discriminator_network_outputs_.get(env::Player::kPlayer2)[id_] = d_network2->forward(); }
+    if (az_network->getBatchSize() > 0) { getSharedData()->network_outputs_[id_] = az_network->forward(); }
+    if (d_network->getBatchSize() > 0) { getSharedData()->network_outputs_[id_] = d_network->forward(); }
 }
 
 bool ArenaThread::backup()
 {
     size_t actor_id = getSharedData()->getAvailableActorIndex();
     if (actor_id >= getSharedData()->actors_.size()) { return false; }
+    if (getSharedData()->run_mcts_[actor_id] == 0) { return true; }
 
     std::shared_ptr<BaseActor>& actor = getSharedData()->actors_[actor_id];
-    int network_id = actor_id % getSharedData()->networks_.get(env::Player::kPlayer1).size();
-    env::Player nn_player = actor->getEnvironment().getTurn();
-    if (actor_id % 2 == 1) { nn_player = (nn_player == env::Player::kPlayer1 ? env::Player::kPlayer2 : env::Player::kPlayer1); }
-    int stage = getSharedData()->actor_stages_[actor_id];
-    if (stage == 0) {
-        actor->afterNNEvaluation(getSharedData()->network_outputs_.get(nn_player)[network_id]);
-    } else {
-        actor->afterNNEvaluation(getSharedData()->discriminator_network_outputs_.get(nn_player)[network_id]);
-    }
+    int network_id = actor_id % getSharedData()->networks_.size();
+    actor->afterNNEvaluation(getSharedData()->network_outputs_[network_id]);
     if (actor->isSearchDone()) { handleSearchDone(actor_id); }
     return true;
 }
@@ -119,17 +81,32 @@ void ArenaThread::handleSearchDone(int actor_id)
     assert(actor_id >= 0 && actor_id < static_cast<int>(getSharedData()->actors_.size()) && getSharedData()->actors_[actor_id]->isSearchDone());
 
     std::shared_ptr<BaseActor>& actor = getSharedData()->actors_[actor_id];
-    if (!actor->isResign()) { actor->act(actor->getSearchAction()); }
+    if (!actor->isResign()) {
+        actor->act(actor->getSearchAction());
+        std::lock_guard lock(getSharedData()->mutex_);
+        std::cout << "play " << actor_id << " " << env::playerToChar(actor->getSearchAction().getPlayer()) << " " << actor->getSearchAction().getActionID() << std::endl;
+    }
     bool is_endgame = (actor->isResign() || actor->isEnvTerminal());
-    bool display_game = (actor_id == 0);
-    if (display_game) { std::cerr << actor->getEnvironment().toString() << actor->getSearchInfo() << std::endl; }
+    if (actor_id == 0) { std::cerr << actor->getEnvironment().toString() << actor->getSearchInfo() << std::endl; }
     if (is_endgame) {
-        getSharedData()->outputGame(actor_id);
+        std::lock_guard lock(getSharedData()->mutex_);
+        std::cout << "game_over " << actor_id << " "
+                  << env::playerToChar(actor->getSearchAction().getPlayer()) << " "
+                  << config::iig_player_file_name << " "
+                  << config::iig_discriminator_file_name << " "
+                  << config::actor_pimc_repeat << " "
+                  << config::iig_arena_tag << std::endl;
+        std::cout << "clear_board " << actor_id << std::endl;
+        if (actor->getSearchAction().getPlayer() == env::Player::kPlayer1) {
+            getSharedData()->set_genmove_ids_.push_back(actor_id);
+            getSharedData()->run_mcts_[actor_id] = 0;
+        } else {
+            getSharedData()->run_mcts_[actor_id] = 1;
+        }
         actor->reset();
     } else {
-        int game_length = actor->getEnvironment().getActionHistory().size();
-        int sequence_length = config::zero_actor_intermediate_sequence_length;
-        if (sequence_length > 0 && game_length >= sequence_length && (game_length - config::learner_n_step_return - config::learner_muzero_unrolling_step) % sequence_length == 0) { getSharedData()->outputGame(actor_id); }
+        getSharedData()->run_mcts_[actor_id] = (actor->getEnvironment().getTurn() == actor->getSearchAction().getPlayer());
+        if (actor->getEnvironment().getTurn() != actor->getSearchAction().getPlayer()) { getSharedData()->set_genmove_ids_.push_back(actor_id); }
         actor->resetSearch();
     }
 }
@@ -137,20 +114,69 @@ void ArenaThread::handleSearchDone(int actor_id)
 void Arena::run()
 {
     initialize();
-    while (true) {
-        getSharedData()->actor_index_ = 0;
-        for (size_t i = 0; i < getSharedData()->actors_.size(); ++i) {
-            auto& actor = getSharedData()->actors_[i];
-            env::Player nn_player = actor->getEnvironment().getTurn();
-            if (i % 2 == 1) { nn_player = (nn_player == env::Player::kPlayer1 ? env::Player::kPlayer2 : env::Player::kPlayer1); }
-            int pimc_count = ((i % 2 == 0 && nn_player == env::Player::kPlayer1 || i % 2 == 1 && nn_player == env::Player::kPlayer2) ? config::iig_evaluation_player1_pimc_repeat : config::iig_evaluation_player2_pimc_repeat);
-            std::static_pointer_cast<ZeroActor>(actor)->setPIMCRepeat(pimc_count);
-            actor->setNetwork(getSharedData()->networks_.get(nn_player)[i % getSharedData()->networks_.get(nn_player).size()]);
-            actor->setNetwork(getSharedData()->discriminator_networks_.get(nn_player)[i % getSharedData()->discriminator_networks_.get(nn_player).size()]);
+    std::string command;
+    while (std::getline(std::cin, command)) {
+        std::vector<std::string> commands = utils::stringToVector(command);
+        if (commands[0] == "quit") {
+            exit(0);
+        } else if (commands[0] == "clear_board") {
+            // format: clear_board <actor_id>
+            int actor_id = std::stoi(commands[1]);
+            std::shared_ptr<BaseActor>& actor = getSharedData()->actors_[actor_id];
+            actor->reset();
+            std::cout << "= " << std::endl;
+        } else if (commands[0] == "play") {
+            // format: play <actor_id> <player> <action_id>
+            int actor_id = std::stoi(commands[1]);
+            env::Player player = env::charToPlayer(commands[2][0]);
+            int action_id = std::stoi(commands[3]);
+            std::shared_ptr<BaseActor>& actor = getSharedData()->actors_[actor_id];
+            actor->act(Action(action_id, player));
+        } else if (commands[0] == "set_genmove") {
+            // format: genmove <actor_id1> <actor_id2> ...
+            for (size_t i = 1; i < commands.size(); ++i) { getSharedData()->run_mcts_[std::stoi(commands[i])] = 1; }
+        } else if (commands[0] == "genmove") {
+            // run MCTS
+            bool is_end = false;
+            getSharedData()->mcts_phase_ = MCTSPhase::kSelection;
+            getSharedData()->set_genmove_ids_.clear();
+            while (!is_end) {
+                getSharedData()->actor_index_ = 0;
+                for (auto& t : slave_threads_) { t->start(); }
+                for (auto& t : slave_threads_) { t->finish(); }
+                getSharedData()->mcts_phase_ = static_cast<MCTSPhase>((static_cast<int>(getSharedData()->mcts_phase_) + 1) % static_cast<int>(MCTSPhase::kSize));
+
+                is_end = true;
+                for (size_t i = 0; i < getSharedData()->actors_.size(); ++i) {
+                    if (!getSharedData()->run_mcts_[i]) { continue; }
+                    is_end = false;
+                    break;
+                }
+            }
+            std::cout << "set_genmove";
+            for (auto& id : getSharedData()->set_genmove_ids_) { std::cout << " " << id; }
+            std::cout << std::endl;
+            std::cout << "genmove" << std::endl;
+        } else if (commands[0] == "game_over") {
+            // format: game_over <actor_id> <opp_player> <player_nn_file_name> <discriminator_nn_file_name> <pimc_repeat> <tag>
+            int actor_id = std::stoi(commands[1]);
+            env::Player opp_player = env::charToPlayer(commands[2][0]);
+            std::string opp_player_nn_file_name = commands[3];
+            std::string opp_discriminator_nn_file_name = commands[4];
+            std::string opp_pimc_repeat = commands[5];
+            std::string opp_tag = (commands.size() < 7 ? "" : commands[6]);
+            std::shared_ptr<BaseActor>& actor = getSharedData()->actors_[actor_id];
+            std::cerr << "[GAME_LOG] "
+                      << actor->getRecord({{"B_NN", opp_player == env::Player::kPlayer1 ? opp_player_nn_file_name : config::iig_player_file_name},
+                                           {"W_NN", opp_player == env::Player::kPlayer1 ? config::iig_player_file_name : opp_player_nn_file_name},
+                                           {"B_DNN", opp_player == env::Player::kPlayer1 ? opp_discriminator_nn_file_name : config::iig_discriminator_file_name},
+                                           {"W_DNN", opp_player == env::Player::kPlayer1 ? config::iig_discriminator_file_name : opp_discriminator_nn_file_name},
+                                           {"B_PIMC_REPEAT", opp_player == env::Player::kPlayer1 ? opp_pimc_repeat : std::to_string(config::actor_pimc_repeat)},
+                                           {"W_PIMC_REPEAT", opp_player == env::Player::kPlayer1 ? std::to_string(config::actor_pimc_repeat) : opp_pimc_repeat},
+                                           {"B_TAG", opp_player == env::Player::kPlayer1 ? opp_tag : config::iig_arena_tag},
+                                           {"W_TAG", opp_player == env::Player::kPlayer1 ? config::iig_arena_tag : opp_tag}})
+                      << std::endl;
         }
-        for (auto& t : slave_threads_) { t->start(); }
-        for (auto& t : slave_threads_) { t->finish(); }
-        getSharedData()->mcts_phase_ = static_cast<MCTSPhase>((static_cast<int>(getSharedData()->mcts_phase_) + 1) % static_cast<int>(MCTSPhase::kSize));
     }
 }
 
@@ -160,37 +186,30 @@ void Arena::initialize()
     createSlaveThreads(num_threads);
     createNeuralNetworks();
     createActors();
-    getSharedData()->mcts_phase_ = MCTSPhase::kSelection;
 }
 
 void Arena::createNeuralNetworks()
 {
     int num_networks = std::min(static_cast<int>(torch::cuda::device_count()), config::zero_num_parallel_games);
     assert(num_networks > 0);
-    getSharedData()->networks_.get(env::Player::kPlayer1).resize(num_networks);
-    getSharedData()->networks_.get(env::Player::kPlayer2).resize(num_networks);
-    getSharedData()->discriminator_networks_.get(env::Player::kPlayer1).resize(num_networks, nullptr);
-    getSharedData()->discriminator_networks_.get(env::Player::kPlayer2).resize(num_networks, nullptr);
-    getSharedData()->network_outputs_.get(env::Player::kPlayer1).resize(num_networks);
-    getSharedData()->network_outputs_.get(env::Player::kPlayer2).resize(num_networks);
-    getSharedData()->discriminator_network_outputs_.get(env::Player::kPlayer1).resize(num_networks);
-    getSharedData()->discriminator_network_outputs_.get(env::Player::kPlayer2).resize(num_networks);
+    getSharedData()->networks_.resize(num_networks);
+    getSharedData()->discriminator_networks_.resize(num_networks, nullptr);
+    getSharedData()->network_outputs_.resize(num_networks);
     for (int gpu_id = 0; gpu_id < num_networks; ++gpu_id) {
-        getSharedData()->networks_.get(env::Player::kPlayer1)[gpu_id] = createNetwork(config::iig_evaluation_player1_file_name, gpu_id);
-        getSharedData()->networks_.get(env::Player::kPlayer2)[gpu_id] = createNetwork(config::iig_evaluation_player2_file_name, gpu_id);
-        if (!config::iig_evaluation_discriminator1_file_name.empty()) { getSharedData()->discriminator_networks_.get(env::Player::kPlayer1)[gpu_id] = createNetwork(config::iig_evaluation_discriminator1_file_name, gpu_id); }
-        if (!config::iig_evaluation_discriminator2_file_name.empty()) { getSharedData()->discriminator_networks_.get(env::Player::kPlayer2)[gpu_id] = createNetwork(config::iig_evaluation_discriminator2_file_name, gpu_id); }
+        getSharedData()->networks_[gpu_id] = createNetwork(config::iig_player_file_name, gpu_id);
+        if (!config::iig_discriminator_file_name.empty()) { getSharedData()->discriminator_networks_[gpu_id] = createNetwork(config::iig_discriminator_file_name, gpu_id); }
     }
 }
 
 void Arena::createActors()
 {
-    assert(getSharedData()->networks_.get(env::Player::kPlayer1).size() > 0);
-    std::shared_ptr<Network>& network = getSharedData()->networks_.get(env::Player::kPlayer1)[0];
+    assert(getSharedData()->networks_.size() > 0);
+    std::shared_ptr<Network>& network = getSharedData()->networks_[0];
     uint64_t tree_node_size = static_cast<uint64_t>(config::actor_num_simulation + 1) * network->getActionSize();
     for (int i = 0; i < config::zero_num_parallel_games; ++i) {
-        getSharedData()->actors_.emplace_back(createActor(tree_node_size, getSharedData()->networks_.get(env::Player::kPlayer1)[i % getSharedData()->networks_.get(env::Player::kPlayer1).size()]));
-        getSharedData()->actor_stages_.push_back(0);
+        getSharedData()->actors_.emplace_back(createActor(tree_node_size, getSharedData()->networks_[i % getSharedData()->networks_.size()]));
+        getSharedData()->actors_.back()->setNetwork(getSharedData()->discriminator_networks_[i % getSharedData()->discriminator_networks_.size()]);
+        getSharedData()->run_mcts_.push_back(0);
     }
 }
 

@@ -106,6 +106,7 @@ int iig_game_step = 0;
 int iig_tsl_transition_iteration = 50;
 int iig_tsl_end_iteration = 100;
 bool iig_use_tsl = false;
+std::string iig_arena_tag = "";
 std::string iig_evaluation_player1_file_name = "";
 std::string iig_evaluation_player2_file_name = "";
 std::string iig_evaluation_discriminator1_file_name = "";
@@ -238,6 +239,7 @@ void setConfiguration(ConfigureLoader& cl)
     cl.addParameter("iig_use_tsl", iig_use_tsl, "true for using true sight learning", "IIG");
     cl.addParameter("iig_tsl_transition_iteration", iig_tsl_transition_iteration, "the training iteration to start transition from TSL to imperfect setting, 50 percent games using TSL, until iig_tsl_end_iteration", "IIG");
     cl.addParameter("iig_tsl_end_iteration", iig_tsl_end_iteration, "the training iteration to end using TSL, after this iteration, disable TSL and use the original sampling strategy", "IIG");
+    cl.addParameter("iig_arena_tag", iig_arena_tag, "tag for iig arena sgf file", "IIG");
     cl.addParameter("iig_evaluation_player1_file_name", iig_evaluation_player1_file_name, "the file name of player 1 model weights for IIG evaluation", "IIG");
     cl.addParameter("iig_evaluation_player2_file_name", iig_evaluation_player2_file_name, "the file name of player 2 model weights for IIG evaluation", "IIG");
     cl.addParameter("iig_evaluation_discriminator1_file_name", iig_evaluation_discriminator1_file_name, "the file name of discriminator 1 model weights for IIG evaluation; only used when iig_use_discriminator is true", "IIG");
