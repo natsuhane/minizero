@@ -299,7 +299,7 @@ void ZeroServer::optimization()
 
 std::string ZeroServer::getUpdatedConfig()
 {
-    std::string job_command = "";
+    std::string job_command = "zero_current_iteration=" + std::to_string(iteration_) + ":";
     if (config::learner_use_per && config::learner_per_beta_anneal) {
         float per_beta = std::min(config::learner_per_init_beta + (iteration_ * 1.0f / config::zero_end_iteration) * (1.0f - config::learner_per_init_beta), 1.0f);
         job_command += "learner_per_init_beta=" + std::to_string(per_beta) + ":";

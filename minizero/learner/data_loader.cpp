@@ -232,7 +232,9 @@ void DataLoaderThread::setSiameseTrainingData(int batch_index)
 
     std::vector<float> anchor = env.getDiscriminatorFeatures(rotation);
     std::vector<float> positive = env.getPlayerFeatures(rotation);
+    positive.resize(config::iig_siamese_board_feature_channels * config::env_board_size * config::env_board_size);
     std::vector<float> negative = sampled_env.getPlayerFeatures(rotation);
+    negative.resize(config::iig_siamese_board_feature_channels * config::env_board_size * config::env_board_size);
 
     std::copy(anchor.begin(), anchor.end(), getSharedData()->getDataPtr()->anchor_ + anchor.size() * batch_index);
     std::copy(positive.begin(), positive.end(), getSharedData()->getDataPtr()->positive_ + positive.size() * batch_index);

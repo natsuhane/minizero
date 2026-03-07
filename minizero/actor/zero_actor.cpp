@@ -25,6 +25,11 @@ void ZeroActor::reset()
 {
     BaseActor::reset();
     enable_resign_ = (utils::Random::randReal() < config::zero_disable_resign_ratio ? false : true);
+    use_tsl_ = (config::iig_use_tsl &&
+                (config::zero_current_iteration < config::iig_tsl_transition_iteration ||
+                 (config::zero_current_iteration >= config::iig_tsl_transition_iteration && config::zero_current_iteration < config::iig_tsl_end_iteration && utils::Random::randReal() < 0.5f)))
+                   ? true
+                   : false;
 }
 
 void ZeroActor::resetSearch()
@@ -36,6 +41,7 @@ void ZeroActor::resetSearch()
     nn_evaluated_batch_ids_.clear();
     anchor_embeddings_.clear();
     informative_states_.clear();
+    informative_state_weights_.clear();
 }
 
 Action ZeroActor::think(bool with_play /*= false*/, bool display_board /*= false*/)
@@ -98,6 +104,7 @@ void ZeroActor::afterNNEvaluation(const std::vector<std::shared_ptr<network::Net
             for (int i = 0; i < pimc_repeat_; ++i) {
                 informative_states_.push_back(env_);
                 informative_states_.back().sampleOneInformationSet(i);
+                informative_state_weights_.push_back(1.0f);
             }
         }
         return;
@@ -106,11 +113,11 @@ void ZeroActor::afterNNEvaluation(const std::vector<std::shared_ptr<network::Net
     const std::vector<MCTSNode*>& node_path = mcts_search_data_.node_path_;
     MCTSNode* leaf_node = node_path.back();
     if (alphazero_network_) {
-        std::vector<int> counts;
+        std::vector<float> counts;
         std::vector<MCTS::ActionCandidate> action_candidates;
         for (int action_id = 0; action_id < env_.getPolicySize(); ++action_id) {
             action_candidates.push_back(MCTS::ActionCandidate(Action(action_id, env_.getTurn()), 0.0f, 0.0f));
-            counts.push_back(0);
+            counts.push_back(0.0f);
         }
         float value_sum = 0.0f, value_count = 0.0f;
         for (int i = 0; i < pimc_repeat_; ++i) {
@@ -118,14 +125,14 @@ void ZeroActor::afterNNEvaluation(const std::vector<std::shared_ptr<network::Net
             Environment env_transition = informative_states_[i];
             calculateEnvironmentTransition(node_path, env_transition);
             std::shared_ptr<AlphaZeroNetworkOutput> alphazero_output = std::static_pointer_cast<AlphaZeroNetworkOutput>(network_outputs[nn_evaluated_batch_ids_[i]]);
-            if (!env_transition.isTerminal()) { calculatePIMCActionPolicy(leaf_node, env_transition, alphazero_output, feature_rotation_, counts, action_candidates); }
+            if (!env_transition.isTerminal()) { calculatePIMCActionPolicy(leaf_node, env_transition, alphazero_output, feature_rotation_, counts, action_candidates, informative_state_weights_[i]); }
             value_sum += (!env_transition.isTerminal() ? alphazero_output->value_ : env_transition.getEvalScore());
             value_count += 1.0f;
         }
         assert(value_count > 0);
         std::vector<MCTS::ActionCandidate> tmp;
         for (size_t i = 0; i < action_candidates.size(); ++i) {
-            if (counts[i] == 0) { continue; }
+            if (counts[i] == 0.0f) { continue; }
             action_candidates[i].policy_ /= counts[i];
             action_candidates[i].policy_logit_ = std::log(action_candidates[i].policy_ + 1e-8f); // TODO: is 1e-8f ok? (5d)
             tmp.push_back(action_candidates[i]);
@@ -170,8 +177,10 @@ void ZeroActor::beforeDiscriminatorNNEvaluation()
     } else {
         for (int i = 0; i < config::iig_max_infoset_size; ++i) {
             Environment env = env_;
-            env.sampleOneInformationSet(i);
-            nn_evaluated_batch_ids_.push_back(siamese_network_->pushBackBoard(env.getPlayerFeatures()));
+            if (!use_tsl_) { env.sampleOneInformationSet(i); }
+            auto features = env.getPlayerFeatures();
+            features.resize(4 * config::env_board_size * config::env_board_size);
+            nn_evaluated_batch_ids_.push_back(siamese_network_->pushBackBoard(features));
         }
     }
 }
@@ -191,7 +200,8 @@ void ZeroActor::afterDiscriminatorNNEvaluation(const std::vector<std::shared_ptr
         std::sort(distances.begin(), distances.end(), [](const std::pair<int, float>& a, const std::pair<int, float>& b) { return a.second < b.second; });
         for (int i = 0; i < pimc_repeat_ && i < static_cast<int>(distances.size()); ++i) {
             informative_states_.push_back(env_);
-            informative_states_.back().sampleOneInformationSet(distances[i].first);
+            if (!use_tsl_) { informative_states_.back().sampleOneInformationSet(distances[i].first); }
+            informative_state_weights_.push_back(1.0f);
         }
     }
 }
@@ -227,6 +237,7 @@ void ZeroActor::handleSearchDone()
 {
     mcts_search_data_.selected_node_ = decideActionNode();
     const Action action = getSearchAction();
+    assert(env_.isLegalAction(action, false));
     std::ostringstream oss;
     oss << "model file name: " << getModelFileName() << std::endl
         << utils::TimeSystem::getTimeString("[Y/m/d H:i:s.f] ")
@@ -295,7 +306,7 @@ std::vector<MCTS::ActionCandidate> ZeroActor::calculateAlphaZeroActionPolicy(con
     return action_candidates;
 }
 
-void ZeroActor::calculatePIMCActionPolicy(MCTSNode* leaf_node, const Environment& env_transition, const std::shared_ptr<network::AlphaZeroNetworkOutput>& alphazero_output, const utils::Rotation& rotation, std::vector<int>& counts, std::vector<MCTS::ActionCandidate>& action_candidates)
+void ZeroActor::calculatePIMCActionPolicy(MCTSNode* leaf_node, const Environment& env_transition, const std::shared_ptr<network::AlphaZeroNetworkOutput>& alphazero_output, const utils::Rotation& rotation, std::vector<float>& counts, std::vector<MCTS::ActionCandidate>& action_candidates, const float policy_weight)
 {
     assert(alphazero_network_);
     for (size_t action_id = 0; action_id < alphazero_output->policy_.size(); ++action_id) {
@@ -304,8 +315,8 @@ void ZeroActor::calculatePIMCActionPolicy(MCTSNode* leaf_node, const Environment
         if (leaf_node == getMCTS()->getRootNode() && !env_.isLegalAction(action, false)) { continue; }
         int rotated_id = env_transition.getRotateAction(action_id, rotation);
         action_candidates[action_id].action_ = action;
-        action_candidates[action_id].policy_ += alphazero_output->policy_[rotated_id];
-        counts[action_id] += 1;
+        action_candidates[action_id].policy_ += alphazero_output->policy_[rotated_id] * policy_weight;
+        counts[action_id] += policy_weight;
     }
 }
 
@@ -339,7 +350,7 @@ bool ZeroActor::calculateEnvironmentTransition(const std::vector<MCTSNode*>& nod
         if (env_transition.isLegalAction(action)) {
             env_transition.act(action);
             env::Player turn = env_transition.getTurn();
-            if (!env_transition.getPerfectEnv().isPassAction(action)) { env_transition.act(Action(action.getActionID(), action.nextPlayer())); } // TODO: add a new getFeature function for reveal known bitboard?? (maple)
+            if (!env_transition.getPerfectEnv().isPassAction(action)) { env_transition.act(Action(action.getActionID(), action.nextPlayer())); }
             env_transition.setTurn(turn);
         } else {
             return false;

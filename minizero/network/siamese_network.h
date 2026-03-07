@@ -59,7 +59,7 @@ public:
 
     int pushBackBoard(std::vector<float> features)
     {
-        const int num_board_input_channels = 6;
+        const int num_board_input_channels = config::iig_siamese_board_feature_channels;
         assert(static_cast<int>(features.size()) == num_board_input_channels * getInputChannelHeight() * getInputChannelWidth());
         assert(batch_size_ < kReserved_batch_size);
 

@@ -53,7 +53,7 @@ class SiameseNetwork(nn.Module):
         pre_embed_dim = 128
         embed_dim = 512
         hidden_channels = 64
-        self.board_in_channels = 6
+        self.board_in_channels = 4
 
         # Embedding networks (separate for anchor and board)
         self.anchor_embed = EmbeddingNetwork(num_input_channels, pre_embed_dim, hidden_channels, num_layers=5)

@@ -63,6 +63,7 @@ PYBIND11_MODULE(minizero_py, m)
     m.def("get_iig_nn_type_name", []() { return config::iig_nn_type_name; });
     m.def("get_iig_generator_file_name", []() { return config::iig_generator_file_name; });
     m.def("get_iig_discriminator_file_name", []() { return config::iig_discriminator_file_name; });
+    m.def("get_iig_siamese_board_feature_channels", []() { return config::iig_siamese_board_feature_channels; });
     m.def("get_iig_player_file_name", []() { return config::iig_player_file_name; });
     m.def("get_iig_nn_feature_channels", []() { return config::iig_nn_feature_channels; });
     m.def("get_iig_generator_feature_channels", []() { return config::iig_generator_feature_channels; });

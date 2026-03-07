@@ -68,7 +68,7 @@ protected:
     virtual std::vector<MCTSNode*> selection() { return (config::actor_use_gumbel ? gumbel_zero_.selection(getMCTS()) : getMCTS()->select()); }
 
     std::vector<MCTS::ActionCandidate> calculateAlphaZeroActionPolicy(const Environment& env_transition, const std::shared_ptr<network::AlphaZeroNetworkOutput>& alphazero_output, const utils::Rotation& rotation);
-    void calculatePIMCActionPolicy(MCTSNode* leaf_node, const Environment& env_transition, const std::shared_ptr<network::AlphaZeroNetworkOutput>& alphazero_output, const utils::Rotation& rotation, std::vector<int>& counts, std::vector<MCTS::ActionCandidate>& action_candidates);
+    void calculatePIMCActionPolicy(MCTSNode* leaf_node, const Environment& env_transition, const std::shared_ptr<network::AlphaZeroNetworkOutput>& alphazero_output, const utils::Rotation& rotation, std::vector<float>& counts, std::vector<MCTS::ActionCandidate>& action_candidates, const float policy_weight);
     std::vector<MCTS::ActionCandidate> calculateMuZeroActionPolicy(MCTSNode* leaf_node, const std::shared_ptr<network::MuZeroNetworkOutput>& muzero_output);
     virtual Environment getEnvironmentTransition(const std::vector<MCTSNode*>& node_path);
     bool calculateEnvironmentTransition(const std::vector<MCTSNode*>& node_path, Environment& env_transition);
@@ -84,10 +84,12 @@ protected:
     std::shared_ptr<network::SiameseNetwork> siamese_network_;
 
     // for pimc
+    bool use_tsl_;
     int pimc_repeat_;
     std::vector<int> is_valid_states_;
     std::vector<int> nn_evaluated_batch_ids_;
     std::vector<float> anchor_embeddings_;
+    std::vector<float> informative_state_weights_;
     std::vector<Environment> informative_states_;
 };
 
