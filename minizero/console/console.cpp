@@ -2,12 +2,14 @@
 #include "configuration.h"
 #include "create_actor.h"
 #include "create_network.h"
+#include "discriminator_network.h"
 #include "sgf_loader.h"
 #include "time_system.h"
 #include <algorithm>
 #include <climits>
 #include <iomanip>
 #include <iostream>
+#include <limits>
 #include <sstream>
 #include <utility>
 
@@ -44,14 +46,14 @@ void Console::initialize()
 {
     if (!network_) {
         network_ = createNetwork(config::nn_file_name, 0);
-        discriminator_network_ = createNetwork(config::iig_discriminator_file_name, 0);
+        if (config::iig_use_discriminator) { discriminator_network_ = createNetwork(config::iig_discriminator_file_name, 0); }
     }
     if (!actor_) {
         uint64_t tree_node_size = static_cast<uint64_t>(config::actor_num_simulation + 1) * network_->getActionSize();
         actor_ = actor::createActor(tree_node_size, network_);
     }
     actor_->setNetwork(network_);
-    actor_->setNetwork(discriminator_network_);
+    if (config::iig_use_discriminator) { actor_->setNetwork(discriminator_network_); }
 
     // forward the network several times to warmup since the first few forwards requires some initialization time
     const int num_warmup_forward = 3;
@@ -169,6 +171,7 @@ void Console::cmdGenmove(const std::vector<std::string>& args)
     actor_->getEnvironment().setTurn(minizero::env::charToPlayer(args[1].c_str()[0]));
     boost::posix_time::ptime start_ptime = utils::TimeSystem::getLocalTime();
     const Action action = actor_->think((args[0] == "genmove" ? true : false), true);
+    if (actor_->isEnvTerminal()) { std::cerr << "Game Over!" << std::endl; }
     std::cerr << "Spent Time = " << (utils::TimeSystem::getLocalTime() - start_ptime).total_milliseconds() / 1000.0f << " (s)" << std::endl;
     if (actor_->isResign()) { return reply(ConsoleResponse::kSuccess, "Resign"); }
     std::cerr << actor_->getEnvironment().toString() << std::endl;

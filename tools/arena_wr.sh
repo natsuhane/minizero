@@ -16,8 +16,8 @@ for file in $(ls -rt arena/* | grep "$grep_str"); do
     p2_folder=$(echo $file | cut -d '/' -f2 | cut -d '.' -f1 | awk -F "_vs_" '{ print $2; }' | awk -F "_" '{ for(i=1;i<=NF-5;++i) { printf $i"_"; } print $(NF-4); }')
     p1_nn=$(echo $file | cut -d '/' -f2 | cut -d '.' -f1 | awk -F "_vs_" '{ print $1; }' | awk -F "_" -v folder=$p1_folder '{ print folder"/model/weight_iter_"$(NF-3)".pt"; }')
     p2_nn=$(echo $file | cut -d '/' -f2 | cut -d '.' -f1 | awk -F "_vs_" '{ print $2; }' | awk -F "_" -v folder=$p2_folder '{ print folder"/model/weight_iter_"$(NF-3)".pt"; }')
-    p1_dnn=$(echo $file | cut -d '/' -f2 | cut -d '.' -f1 | awk -F "_vs_" '{ print $1; }' | awk -F "_" -v folder=$p1_folder '{ print folder"/discriminator_model/weight_iter_"$(NF-2)".pt"; }')
-    p2_dnn=$(echo $file | cut -d '/' -f2 | cut -d '.' -f1 | awk -F "_vs_" '{ print $2; }' | awk -F "_" -v folder=$p2_folder '{ print folder"/discriminator_model/weight_iter_"$(NF-2)".pt"; }')
+    p1_dnn=$(echo $file | cut -d '/' -f2 | cut -d '.' -f1 | awk -F "_vs_" '{ print $1; }' | awk -F "_" -v folder=$p1_folder '{ if($(NF-2)!="") {print folder"/discriminator_model/weight_iter_"$(NF-2)".pt";} }')
+    p2_dnn=$(echo $file | cut -d '/' -f2 | cut -d '.' -f1 | awk -F "_vs_" '{ print $2; }' | awk -F "_" -v folder=$p2_folder '{ if($(NF-2)!="") {print folder"/discriminator_model/weight_iter_"$(NF-2)".pt";} }')
     p1_pimc=$(echo $file | cut -d '/' -f2 | cut -d '.' -f1 | awk -F "_vs_" '{ print $1; }' | awk -F "_" '{ print $(NF-1); }')
     p2_pimc=$(echo $file | cut -d '/' -f2 | cut -d '.' -f1 | awk -F "_vs_" '{ print $2; }' | awk -F "_" '{ print $(NF-1); }')
     p1_tag=$(echo $file | cut -d '/' -f2 | cut -d '.' -f1 | awk -F "_vs_" '{ print $1; }' | awk -F "_" '{ print $NF; }')
@@ -25,7 +25,7 @@ for file in $(ls -rt arena/* | grep "$grep_str"); do
     file_with_color=$(echo $file | awk -F "/" '{ print $NF; }' | sed -E 's/(phantomgo_)([^_]+)(_gaz)/\1\x1b[1;31m\2\x1b[0m\3/;s/_([0-9]+_[0-9]+_[0-9]+)_vs_/_\x1b[1;31m\1\x1b[0m_vs_/;s/_([0-9]+_[0-9]+_[0-9]+)\.sgf/_\x1b[1;31m\1\x1b[0m.sgf/')
     tac $file \
         | grep -oP 'RE\[[10\.-]+\].*?(?=;B\[(?:[0-9]|[1-9][0-9])\])' \
-        | sed 's/1.000000/1/g;s/OBS\[\]//g;s/EV\[\]//g;s/ //g' | sed 's/\[/ /g;s/\]/ /g' | awk \
+        | sed 's/1.000000/1/g;s/OBS\[\]//g;s/EV\[\]//g;s/B_TAG\[\]//g;s/W_TAG\[\]//g;s/B_DNN\[\]//g;s/W_DNN\[\]//g;;s/ //g' | sed 's/\[/ /g;s/\]/ /g' | awk \
             -v file=$file_with_color \
             -v first_name=$p1_nn$p1_dnn$p1_pimc$p1_tag \
             -v second_name=$p2_nn$p2_dnn$p2_pimc$p2_tag 'BEGIN {
@@ -57,10 +57,12 @@ for file in $(ls -rt arena/* | grep "$grep_str"); do
                     board_size = value;
                 }
             }
-            if(p1_dnn == "") { p1_dnn = p1; }
-            if(p2_dnn == "") { p2_dnn = p2; }
+            if(p1_dnn == "") { p1_dnn = ""; }
+            if(p2_dnn == "") { p2_dnn = ""; }
             if(p1_pimc_repeat == "") { p1_pimc_repeat = "5"; }
             if(p2_pimc_repeat == "") { p2_pimc_repeat = "5"; }
+            if(p1_tag == "") { p1_tag = ""; }
+            if(p2_tag == "") { p2_tag = ""; }
 
             p1_name = p1""p1_dnn""p1_pimc_repeat""p1_tag;
             p2_name = p2""p2_dnn""p2_pimc_repeat""p2_tag;

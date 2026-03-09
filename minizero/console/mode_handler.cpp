@@ -226,6 +226,7 @@ void ModeHandler::runRecoverObs()
 // for info set generator
 void ModeHandler::runVisualizeSgf()
 {
+#if PHANTOMGO
     // find target game by id
     EnvironmentLoader env_loader;
     int target_game_id = config::iig_game_id;
@@ -292,6 +293,8 @@ void ModeHandler::runVisualizeSgf()
     std::ofstream fout("visualizer/index.html");
     fout << template_html;
     fout.close();
+#else
+#endif
 }
 
 void ModeHandler::runEvaluator()
