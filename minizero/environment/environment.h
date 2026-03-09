@@ -82,6 +82,12 @@ typedef minizero::env::othello::OthelloEnvLoader EnvironmentLoader;
 typedef minizero::env::phantomgo::PhantomGoAction Action;
 typedef minizero::env::phantomgo::PhantomGoEnv Environment;
 typedef minizero::env::phantomgo::PhantomGoEnvLoader EnvironmentLoader;
+#elif DARKHEX
+#include "darkhex.h"
+#include "hex.h"
+typedef minizero::env::hex::HexAction Action;
+typedef minizero::env::darkhex::DarkHexEnv Environment;
+typedef minizero::env::darkhex::DarkHexEnvLoader EnvironmentLoader;
 #elif PUZZLE2048
 #include "puzzle2048.h"
 typedef minizero::env::puzzle2048::Puzzle2048Action Action;
@@ -136,6 +142,9 @@ inline void setUpEnv()
     phantomgo::initialize();
 #elif TETRISBLOCKPUZZLE
     tetrisblockpuzzle::initialize();
+#elif DARKHEX
+    config::env_board_size = 11;
+    config::env_hex_use_swap_rule = false;
 #endif
 
 #if AMAZONS

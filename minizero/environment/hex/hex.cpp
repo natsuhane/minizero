@@ -92,9 +92,7 @@ bool HexEnv::isLegalAction(const HexAction& action) const
     assert(player == Player::kPlayer1 || player == Player::kPlayer2);
 
     // Check if the move is on an empty cell and it's the player's turn
-    // return player == turn_ && board_[actionID].player == Player::kPlayerNone;
-    return player == turn_ &&
-           ((config::env_hex_use_swap_rule && actions_.size() == 1) // swap rule
+    return ((config::env_hex_use_swap_rule && actions_.size() == 1) // swap rule
             || (board_[action_id].player == Player::kPlayerNone));  // non-swap rule
 }
 
@@ -165,6 +163,7 @@ std::string HexEnv::toString() const
             color_player_2)};
         rr.insert(rr.end(), colored.begin(), colored.end());
     }
+    rr.insert(rr.end(), board_size_ + 3, ' ');
     rr.push_back('\n');
 
     for (size_t ii = board_size_; ii-- > 0;) {
@@ -211,6 +210,9 @@ std::string HexEnv::toString() const
         // Adding extra space to compensate for larger row numbers
         if (ii < 9) rr.push_back(' ');
 
+        for (size_t jj = 0; jj < ii; jj++) {
+            rr.push_back(' ');
+        }
         rr.push_back('\n');
     }
 
@@ -228,6 +230,7 @@ std::string HexEnv::toString() const
             color_player_2)};
         rr.insert(rr.end(), colored.begin(), colored.end());
     }
+    rr.insert(rr.end(), 4, ' ');
     rr.push_back('\n');
 
     std::string ss(rr.begin(), rr.end());
@@ -302,6 +305,15 @@ std::vector<int> HexEnv::getWinningStonesPosition() const
         }
     }
     return winning_stones;
+}
+
+bool HexEnv::isWinningMove(const HexAction& action) const
+{
+    // TODO: optimize this function if it is too slow
+    assert(isLegalAction(action));
+    HexEnv env = *this;
+    env.act(action);
+    return env.isTerminal();
 }
 
 Player HexEnv::updateWinner(int action_id)

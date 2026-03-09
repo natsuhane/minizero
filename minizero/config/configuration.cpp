@@ -121,7 +121,7 @@ std::string env_go_ko_rule = "positional";
 std::string env_gomoku_rule = "standard";
 bool env_gomoku_exactly_five_stones = true;
 bool env_havannah_use_swap_rule = true;
-bool env_hex_use_swap_rule = true;
+bool env_hex_use_swap_rule = false;
 bool env_killallgo_use_seki = false;
 bool env_phantomgo_has_illegal_hint_rule = true;
 int env_rubiks_scramble_rotate = 5;
@@ -230,6 +230,7 @@ void setConfiguration(ConfigureLoader& cl)
     cl.addParameter("iig_game_id", iig_game_id, "the game id for transforming sgf", "IIG");
     cl.addParameter("iig_game_step", iig_game_step, "the game step for transforming sgf", "IIG");
     cl.addParameter("iig_use_tsl", iig_use_tsl, "true for using true sight learning", "IIG");
+    cl.addParameter("iig_use_merge_pimc", iig_use_merge_pimc, "true for merging PIMC search in each simulation, false for alphaze-star-like", "IIG");
     cl.addParameter("iig_tsl_transition_iteration", iig_tsl_transition_iteration, "the training iteration to start transition from TSL to imperfect setting, 50 percent games using TSL, until iig_tsl_end_iteration", "IIG");
     cl.addParameter("iig_tsl_end_iteration", iig_tsl_end_iteration, "the training iteration to end using TSL, after this iteration, disable TSL and use the original sampling strategy", "IIG");
     cl.addParameter("iig_arena_tag", iig_arena_tag, "tag for iig arena sgf file", "IIG");
@@ -248,6 +249,10 @@ void setConfiguration(ConfigureLoader& cl)
                     "Environment");
 #elif CONHEX
     cl.addParameter("env_conhex_use_swap_rule", env_conhex_use_swap_rule, "the swap rule in ConHex", "Environment");
+#elif DARKHEX
+    cl.addParameter("env_iig_display_perfect_board", env_iig_display_perfect_board, "true for displaying the perfect board", "Environment");
+    cl.addParameter("env_iig_display_imperfect_p1_board", env_iig_display_imperfect_p1_board, "true for displaying the imperfect board of player 1", "Environment");
+    cl.addParameter("env_iig_display_imperfect_p2_board", env_iig_display_imperfect_p2_board, "true for displaying the imperfect board of player 2", "Environment");
 #elif GO
     cl.addParameter("env_go_komi", env_go_komi, "the komi in Go", "Environment");
     cl.addParameter("env_go_ko_rule", env_go_ko_rule, "the ko rules in Go: positional (only consider stones), situational (consider stones and the turn)", "Environment");

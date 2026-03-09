@@ -18,6 +18,7 @@ target_include_directories(
     hex
     imperfect-information
     imperfect-information/phantomgo
+    imperfect-information/darkhex
     killallgo
     linesofaction
     nogo

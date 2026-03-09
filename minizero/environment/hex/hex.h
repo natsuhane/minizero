@@ -58,6 +58,7 @@ public:
     inline Player getWinner() const { return winner_; }
     inline const std::vector<Cell>& getBoard() const { return board_; }
     std::vector<int> getWinningStonesPosition() const;
+    bool isWinningMove(const HexAction& action) const;
     inline int getRotatePosition(int position, utils::Rotation rotation) const override { return position; }
     inline int getRotateAction(int action_id, utils::Rotation rotation) const override { return action_id; }
 
