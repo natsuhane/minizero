@@ -53,6 +53,7 @@ public:
     inline void setPIMCRepeat(int pimc_repeat) { pimc_repeat_ = pimc_repeat; }
 
 protected:
+    void resetPIMCSearch();
     void beforeDiscriminatorNNEvaluation();
     void afterDiscriminatorNNEvaluation(const std::vector<std::shared_ptr<network::NetworkOutput>>& network_outputs);
     std::vector<std::pair<std::string, std::string>> getActionInfo() const override;
@@ -67,7 +68,8 @@ protected:
     virtual void addNoiseToNodeChildren(MCTSNode* node);
     virtual std::vector<MCTSNode*> selection() { return (config::actor_use_gumbel ? gumbel_zero_.selection(getMCTS()) : getMCTS()->select()); }
 
-    std::vector<MCTS::ActionCandidate> calculateAlphaZeroActionPolicy(const Environment& env_transition, const std::shared_ptr<network::AlphaZeroNetworkOutput>& alphazero_output, const utils::Rotation& rotation);
+    void setMCTSPolicyString();
+    std::vector<MCTS::ActionCandidate> calculateAlphaZeroActionPolicy(MCTSNode* leaf_node, const Environment& env_transition, const std::shared_ptr<network::AlphaZeroNetworkOutput>& alphazero_output, const utils::Rotation& rotation);
     void calculatePIMCActionPolicy(MCTSNode* leaf_node, const Environment& env_transition, const std::shared_ptr<network::AlphaZeroNetworkOutput>& alphazero_output, const utils::Rotation& rotation, std::vector<float>& counts, std::vector<MCTS::ActionCandidate>& action_candidates, const float policy_weight);
     std::vector<MCTS::ActionCandidate> calculateMuZeroActionPolicy(MCTSNode* leaf_node, const std::shared_ptr<network::MuZeroNetworkOutput>& muzero_output);
     virtual Environment getEnvironmentTransition(const std::vector<MCTSNode*>& node_path);
@@ -91,6 +93,13 @@ protected:
     std::vector<float> anchor_embeddings_;
     std::vector<float> informative_state_weights_;
     std::vector<Environment> informative_states_;
+
+    // for split tree pimc
+    int pimc_count_;
+    utils::Rotation pimc_rotation_;
+    std::string mcts_policy_string_;
+    std::vector<std::string> mcts_policy_strings_;
+    std::vector<std::vector<MCTSNode>> pimc_tree_nodes_;
 };
 
 } // namespace minizero::actor

@@ -91,7 +91,6 @@ extern int iig_nn_embedding_size;
 extern std::string iig_train_sgf_file_name;
 extern std::string iig_eval_sgf_file_name;
 extern std::string iig_sampling_strategy;
-extern bool iig_debug_output;
 extern int iig_max_move_distance;
 extern float iig_value_threshold;
 extern int iig_max_infoset_size;
@@ -106,15 +105,10 @@ extern std::string iig_visualizer_input_sgf;
 extern int iig_game_id;
 extern int iig_game_step;
 extern bool iig_use_tsl;
+extern bool iig_use_merge_pimc;
 extern int iig_tsl_transition_iteration;
 extern int iig_tsl_end_iteration;
 extern std::string iig_arena_tag;
-extern std::string iig_evaluation_player1_file_name;
-extern std::string iig_evaluation_player2_file_name;
-extern std::string iig_evaluation_discriminator1_file_name;
-extern std::string iig_evaluation_discriminator2_file_name;
-extern int iig_evaluation_player1_pimc_repeat;
-extern int iig_evaluation_player2_pimc_repeat;
 
 // environment parameters
 extern int env_board_size;

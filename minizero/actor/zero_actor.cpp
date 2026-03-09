@@ -25,6 +25,7 @@ void ZeroActor::reset()
 {
     BaseActor::reset();
     enable_resign_ = (utils::Random::randReal() < config::zero_disable_resign_ratio ? false : true);
+    if (!config::iig_use_merge_pimc) { resetPIMCSearch(); }
     use_tsl_ = (config::iig_use_tsl &&
                 (config::zero_current_iteration < config::iig_tsl_transition_iteration ||
                  (config::zero_current_iteration >= config::iig_tsl_transition_iteration && config::zero_current_iteration < config::iig_tsl_end_iteration && utils::Random::randReal() < 0.5f)))
@@ -69,15 +70,28 @@ void ZeroActor::beforeNNEvaluation()
     mcts_search_data_.node_path_ = selection();
     if (alphazero_network_) {
         feature_rotation_ = config::actor_use_random_rotation_features ? static_cast<utils::Rotation>(utils::Random::randInt() % static_cast<int>(utils::Rotation::kRotateSize)) : utils::Rotation::kRotationNone;
-        is_valid_states_.clear();
-        for (int i = 0; i < pimc_repeat_; ++i) {
-            Environment env_transition = informative_states_[i];
-            is_valid_states_.push_back(calculateEnvironmentTransition(mcts_search_data_.node_path_, env_transition));
-            if (is_valid_states_.back()) {
-                nn_evaluated_batch_ids_.push_back(alphazero_network_->pushBack(env_transition.getFeatures(feature_rotation_)));
-            } else {
-                nn_evaluated_batch_ids_.push_back(-1);
+        if (config::iig_use_merge_pimc) {
+            is_valid_states_.clear();
+            for (int i = 0; i < pimc_repeat_; ++i) {
+                Environment env_transition = informative_states_[i];
+                is_valid_states_.push_back(calculateEnvironmentTransition(mcts_search_data_.node_path_, env_transition));
+                if (is_valid_states_.back()) {
+                    nn_evaluated_batch_ids_.push_back(alphazero_network_->pushBack(env_transition.getFeatures(feature_rotation_)));
+                } else {
+                    nn_evaluated_batch_ids_.push_back(-1);
+                }
             }
+        } else {
+            if (getMCTS()->getNumSimulation() == 0) {
+                if (pimc_count_ == 0) {
+                    pimc_rotation_ = feature_rotation_;
+                } else {
+                    feature_rotation_ = pimc_rotation_;
+                }
+            }
+            Environment env_transition = informative_states_[pimc_count_];
+            calculateEnvironmentTransition(mcts_search_data_.node_path_, env_transition);
+            nn_evaluated_batch_ids_.push_back(alphazero_network_->pushBack(env_transition.getPlayerFeatures(feature_rotation_)));
         }
     } else if (muzero_network_) {
         if (getMCTS()->getNumSimulation() == 0) { // initial inference for root node
@@ -113,34 +127,46 @@ void ZeroActor::afterNNEvaluation(const std::vector<std::shared_ptr<network::Net
     const std::vector<MCTSNode*>& node_path = mcts_search_data_.node_path_;
     MCTSNode* leaf_node = node_path.back();
     if (alphazero_network_) {
-        std::vector<float> counts;
-        std::vector<MCTS::ActionCandidate> action_candidates;
-        for (int action_id = 0; action_id < env_.getPolicySize(); ++action_id) {
-            action_candidates.push_back(MCTS::ActionCandidate(Action(action_id, env_.getTurn()), 0.0f, 0.0f));
-            counts.push_back(0.0f);
+        if (config::iig_use_merge_pimc) {
+            std::vector<float> counts;
+            std::vector<MCTS::ActionCandidate> action_candidates;
+            for (int action_id = 0; action_id < env_.getPolicySize(); ++action_id) {
+                action_candidates.push_back(MCTS::ActionCandidate(Action(action_id, env_.getTurn()), 0.0f, 0.0f));
+                counts.push_back(0.0f);
+            }
+            float value_sum = 0.0f, value_count = 0.0f;
+            for (int i = 0; i < pimc_repeat_; ++i) {
+                if (!is_valid_states_[i]) { continue; }
+                Environment env_transition = informative_states_[i];
+                calculateEnvironmentTransition(node_path, env_transition);
+                std::shared_ptr<AlphaZeroNetworkOutput> alphazero_output = std::static_pointer_cast<AlphaZeroNetworkOutput>(network_outputs[nn_evaluated_batch_ids_[i]]);
+                if (!env_transition.isTerminal()) { calculatePIMCActionPolicy(leaf_node, env_transition, alphazero_output, feature_rotation_, counts, action_candidates, informative_state_weights_[i]); }
+                value_sum += (!env_transition.isTerminal() ? alphazero_output->value_ : env_transition.getEvalScore());
+                value_count += 1.0f;
+            }
+            assert(value_count > 0);
+            std::vector<MCTS::ActionCandidate> tmp;
+            for (size_t i = 0; i < action_candidates.size(); ++i) {
+                if (counts[i] == 0.0f) { continue; }
+                action_candidates[i].policy_ /= counts[i];
+                action_candidates[i].policy_logit_ = std::log(action_candidates[i].policy_ + 1e-8f); // TODO: is 1e-8f ok? (5d)
+                tmp.push_back(action_candidates[i]);
+            }
+            sort(tmp.begin(), tmp.end(), [](const MCTS::ActionCandidate& a, const MCTS::ActionCandidate& b) { return a.policy_ > b.policy_; });
+            action_candidates = tmp;
+            if (!action_candidates.empty()) { getMCTS()->expand(leaf_node, action_candidates); }
+            getMCTS()->backup(node_path, value_sum / value_count, 0.0f);
+        } else {
+            Environment env_transition = informative_states_[pimc_count_];
+            calculateEnvironmentTransition(mcts_search_data_.node_path_, env_transition);
+            if (!env_transition.isTerminal()) {
+                std::shared_ptr<AlphaZeroNetworkOutput> alphazero_output = std::static_pointer_cast<AlphaZeroNetworkOutput>(network_outputs[nn_evaluated_batch_ids_[0]]);
+                getMCTS()->expand(leaf_node, calculateAlphaZeroActionPolicy(leaf_node, env_transition, alphazero_output, feature_rotation_));
+                getMCTS()->backup(node_path, alphazero_output->value_, 0.0f);
+            } else {
+                getMCTS()->backup(node_path, env_transition.getEvalScore(), 0.0f);
+            }
         }
-        float value_sum = 0.0f, value_count = 0.0f;
-        for (int i = 0; i < pimc_repeat_; ++i) {
-            if (!is_valid_states_[i]) { continue; }
-            Environment env_transition = informative_states_[i];
-            calculateEnvironmentTransition(node_path, env_transition);
-            std::shared_ptr<AlphaZeroNetworkOutput> alphazero_output = std::static_pointer_cast<AlphaZeroNetworkOutput>(network_outputs[nn_evaluated_batch_ids_[i]]);
-            if (!env_transition.isTerminal()) { calculatePIMCActionPolicy(leaf_node, env_transition, alphazero_output, feature_rotation_, counts, action_candidates, informative_state_weights_[i]); }
-            value_sum += (!env_transition.isTerminal() ? alphazero_output->value_ : env_transition.getEvalScore());
-            value_count += 1.0f;
-        }
-        assert(value_count > 0);
-        std::vector<MCTS::ActionCandidate> tmp;
-        for (size_t i = 0; i < action_candidates.size(); ++i) {
-            if (counts[i] == 0.0f) { continue; }
-            action_candidates[i].policy_ /= counts[i];
-            action_candidates[i].policy_logit_ = std::log(action_candidates[i].policy_ + 1e-8f); // TODO: is 1e-8f ok? (5d)
-            tmp.push_back(action_candidates[i]);
-        }
-        sort(tmp.begin(), tmp.end(), [](const MCTS::ActionCandidate& a, const MCTS::ActionCandidate& b) { return a.policy_ > b.policy_; });
-        action_candidates = tmp;
-        if (!action_candidates.empty()) { getMCTS()->expand(leaf_node, action_candidates); }
-        getMCTS()->backup(node_path, value_sum / value_count, 0.0f);
     } else if (muzero_network_) {
         std::shared_ptr<MuZeroNetworkOutput> muzero_output = std::static_pointer_cast<MuZeroNetworkOutput>(network_outputs[nn_evaluated_batch_ids_[0]]);
         getMCTS()->expand(leaf_node, calculateMuZeroActionPolicy(leaf_node, muzero_output));
@@ -170,6 +196,14 @@ void ZeroActor::setNetwork(const std::shared_ptr<network::Network>& network)
     }
 }
 
+void ZeroActor::resetPIMCSearch()
+{
+    pimc_count_ = 0;
+    mcts_policy_strings_.clear();
+    pimc_tree_nodes_.clear();
+    pimc_tree_nodes_.resize(pimc_repeat_, std::vector<MCTSNode>(env_.getPolicySize() + 1, MCTSNode()));
+}
+
 void ZeroActor::beforeDiscriminatorNNEvaluation()
 {
     if (anchor_embeddings_.empty()) {
@@ -179,7 +213,7 @@ void ZeroActor::beforeDiscriminatorNNEvaluation()
             Environment env = env_;
             if (!use_tsl_) { env.sampleOneInformationSet(i); }
             auto features = env.getPlayerFeatures();
-            features.resize(4 * config::env_board_size * config::env_board_size);
+            features.resize(config::iig_siamese_board_feature_channels * config::env_board_size * config::env_board_size);
             nn_evaluated_batch_ids_.push_back(siamese_network_->pushBackBoard(features));
         }
     }
@@ -223,18 +257,60 @@ std::string ZeroActor::getEnvReward() const
 void ZeroActor::step()
 {
     assert(alphazero_network_ || muzero_network_ || siamese_network_ || discriminator_network_);
-    int num_simulation = getMCTS()->getNumSimulation();
 
     beforeNNEvaluation();
-    auto network_output = siamese_network_ && siamese_network_->getBatchSize() > 0
-                              ? siamese_network_->forward()
-                              : (alphazero_network_ ? alphazero_network_->forward()
-                                                    : (num_simulation == 0 ? muzero_network_->initialInference() : muzero_network_->recurrentInference()));
-    afterNNEvaluation(network_output);
+    if (siamese_network_ && siamese_network_->getBatchSize() > 0) {
+        afterNNEvaluation(siamese_network_->forward());
+    } else if (alphazero_network_ && alphazero_network_->getBatchSize() > 0) {
+        afterNNEvaluation(alphazero_network_->forward());
+    } else {
+        afterNNEvaluation({});
+    }
 }
 
 void ZeroActor::handleSearchDone()
 {
+    if (!config::iig_use_merge_pimc) {
+        if (config::actor_use_gumbel) { mcts_policy_strings_.push_back(getMCTSPolicy()); }
+        MCTSNode* root = getMCTS()->getRootNode();
+        pimc_tree_nodes_[pimc_count_][0] = *root;
+        pimc_tree_nodes_[pimc_count_][0].setFirstChild(pimc_tree_nodes_.back().data() + 1);
+        for (int i = 0; i < root->getNumChildren(); ++i) {
+            MCTSNode* child = root->getChild(i);
+            MCTSNode& pimc_child = pimc_tree_nodes_[pimc_count_][child->getAction().getActionID() + 1];
+            pimc_child = *child;
+        }
+
+        resetSearch();
+        ++pimc_count_;
+        if (pimc_count_ < pimc_repeat_) { return; }
+
+        // at the final stage, we need to expand root's children again since we need to use current imperfect board to exapnd legal actions
+        std::vector<MCTS::ActionCandidate> action_candidates;
+        for (int action_id = 0; action_id < env_.getPolicySize(); ++action_id) {
+            Action action(action_id, env_.getTurn());
+            if (!env_.isLegalAction(action, false)) { continue; }
+            action_candidates.push_back(MCTS::ActionCandidate(action, 0.0f, 0.0f));
+        }
+        getMCTS()->expand(root, action_candidates);
+        for (size_t i = 0; i < pimc_tree_nodes_.size(); ++i) { root->add(pimc_tree_nodes_[i][0].getMean(), pimc_tree_nodes_[i][0].getCount()); }
+        root->setCount(config::actor_num_simulation + 1);
+
+        float policy_sum = 0.0f, value_sum = 0.0f;
+        for (int i = 0; i < root->getNumChildren(); ++i) {
+            MCTSNode* child = root->getChild(i);
+            for (size_t j = 0; j < pimc_tree_nodes_.size(); ++j) {
+                MCTSNode& pimc_child = pimc_tree_nodes_[j][child->getAction().getActionID() + 1];
+                child->add(pimc_child.getMean(), pimc_child.getCount());
+                policy_sum += pimc_child.getPolicy();
+                value_sum += pimc_child.getValue();
+                child->setPolicy(policy_sum / config::actor_pimc_repeat);
+                child->setValue(value_sum / config::actor_pimc_repeat);
+            }
+        }
+        if (config::actor_use_gumbel) { setMCTSPolicyString(); }
+    }
+
     mcts_search_data_.selected_node_ = decideActionNode();
     const Action action = getSearchAction();
     assert(env_.isLegalAction(action, false));
@@ -250,7 +326,14 @@ void ZeroActor::handleSearchDone()
     oss << std::endl
         << "  root node info: " << getMCTS()->getRootNode()->toString() << std::endl
         << "action node info: " << mcts_search_data_.selected_node_->toString() << std::endl;
+    if (!config::iig_use_merge_pimc) {
+        for (size_t i = 0; i < pimc_tree_nodes_.size(); ++i) {
+            int index = mcts_search_data_.selected_node_ - getMCTS()->getRootNode()->getChild(0) + 1;
+            oss << "pimc node info (" << i << "): " << pimc_tree_nodes_[i][index].toString() << std::endl;
+        }
+    }
     mcts_search_data_.search_info_ = oss.str();
+    if (!config::iig_use_merge_pimc) { resetPIMCSearch(); }
 }
 
 MCTSNode* ZeroActor::decideActionNode()
@@ -290,7 +373,28 @@ void ZeroActor::addNoiseToNodeChildren(MCTSNode* node)
     }
 }
 
-std::vector<MCTS::ActionCandidate> ZeroActor::calculateAlphaZeroActionPolicy(const Environment& env_transition, const std::shared_ptr<network::AlphaZeroNetworkOutput>& alphazero_output, const utils::Rotation& rotation)
+void ZeroActor::setMCTSPolicyString()
+{
+    std::vector<float> pimc_policy(env_.getPolicySize(), 0.0f);
+    for (auto& str : mcts_policy_strings_) {
+        auto token = utils::stringToVector(str, ",");
+        for (auto& t : token) {
+            int action_id = std::stoi(t.substr(0, t.find(':')));
+            float prob = std::stof(t.substr(t.find(':') + 1));
+            assert(action_id >= 0 && action_id < static_cast<int>(pimc_policy.size()));
+            pimc_policy[action_id] += prob;
+        }
+    }
+
+    mcts_policy_string_ = "";
+    for (size_t i = 0; i < pimc_policy.size(); ++i) {
+        if (pimc_policy[i] == 0.0f) { continue; }
+        if (!mcts_policy_string_.empty()) { mcts_policy_string_ += ","; }
+        mcts_policy_string_ += std::to_string(i) + ":" + std::to_string(pimc_policy[i]);
+    }
+}
+
+std::vector<MCTS::ActionCandidate> ZeroActor::calculateAlphaZeroActionPolicy(MCTSNode* leaf_node, const Environment& env_transition, const std::shared_ptr<network::AlphaZeroNetworkOutput>& alphazero_output, const utils::Rotation& rotation)
 {
     assert(alphazero_network_);
     std::vector<MCTS::ActionCandidate> action_candidates;
@@ -349,9 +453,15 @@ bool ZeroActor::calculateEnvironmentTransition(const std::vector<MCTSNode*>& nod
         const Action& action = node_path[j]->getAction();
         if (env_transition.isLegalAction(action)) {
             env_transition.act(action);
-            env::Player turn = env_transition.getTurn();
-            if (!env_transition.getPerfectEnv().isPassAction(action)) { env_transition.act(Action(action.getActionID(), action.nextPlayer())); }
-            env_transition.setTurn(turn);
+            if (config::iig_use_merge_pimc) {
+                env::Player turn = env_transition.getTurn();
+#if PHANTOMGO
+                if (!env_transition.getPerfectEnv().isPassAction(action)) { env_transition.act(Action(action.getActionID(), action.nextPlayer())); }
+#else
+                env_transition.act(Action(action.getActionID(), action.nextPlayer()));
+#endif
+                env_transition.setTurn(turn);
+            }
         } else {
             return false;
         }

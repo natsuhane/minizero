@@ -89,7 +89,6 @@ int iig_nn_embedding_size = 512;
 std::string iig_train_sgf_file_name = "";
 std::string iig_eval_sgf_file_name = "";
 std::string iig_sampling_strategy = "move_by_policy";
-bool iig_debug_output = false;
 int iig_max_move_distance = 0;
 float iig_value_threshold = 0.1f;
 int iig_max_infoset_size = 100;
@@ -106,13 +105,8 @@ int iig_game_step = 0;
 int iig_tsl_transition_iteration = 50;
 int iig_tsl_end_iteration = 100;
 bool iig_use_tsl = false;
+bool iig_use_merge_pimc = true;
 std::string iig_arena_tag = "";
-std::string iig_evaluation_player1_file_name = "";
-std::string iig_evaluation_player2_file_name = "";
-std::string iig_evaluation_discriminator1_file_name = "";
-std::string iig_evaluation_discriminator2_file_name = "";
-int iig_evaluation_player1_pimc_repeat = 5;
-int iig_evaluation_player2_pimc_repeat = 5;
 
 // environment parameters
 int env_board_size = 0;
@@ -222,7 +216,6 @@ void setConfiguration(ConfigureLoader& cl)
     cl.addParameter("iig_train_sgf_file_name", iig_train_sgf_file_name, "the training sgf file name (replace --link_sgf)", "IIG");
     cl.addParameter("iig_eval_sgf_file_name", iig_eval_sgf_file_name, "the testing sgf file name", "IIG");
     cl.addParameter("iig_sampling_strategy", iig_sampling_strategy, "the sampling (generating) strategy for negative boards: random_move_piece/filter_by_value/move_by_policy", "IIG");
-    cl.addParameter("iig_debug_output", iig_debug_output, "whether to print debug board visualization output", "IIG");
     cl.addParameter("iig_max_move_distance", iig_max_move_distance, "the maximum Manhattan distance for moving stones", "IIG");
     cl.addParameter("iig_value_threshold", iig_value_threshold, "the threshold to filter possible negative boards by value", "IIG");
     cl.addParameter("iig_max_infoset_size", iig_max_infoset_size, "the max number of generating negative samples (selecting stones to move/move by policy)", "IIG");
@@ -240,12 +233,6 @@ void setConfiguration(ConfigureLoader& cl)
     cl.addParameter("iig_tsl_transition_iteration", iig_tsl_transition_iteration, "the training iteration to start transition from TSL to imperfect setting, 50 percent games using TSL, until iig_tsl_end_iteration", "IIG");
     cl.addParameter("iig_tsl_end_iteration", iig_tsl_end_iteration, "the training iteration to end using TSL, after this iteration, disable TSL and use the original sampling strategy", "IIG");
     cl.addParameter("iig_arena_tag", iig_arena_tag, "tag for iig arena sgf file", "IIG");
-    cl.addParameter("iig_evaluation_player1_file_name", iig_evaluation_player1_file_name, "the file name of player 1 model weights for IIG evaluation", "IIG");
-    cl.addParameter("iig_evaluation_player2_file_name", iig_evaluation_player2_file_name, "the file name of player 2 model weights for IIG evaluation", "IIG");
-    cl.addParameter("iig_evaluation_discriminator1_file_name", iig_evaluation_discriminator1_file_name, "the file name of discriminator 1 model weights for IIG evaluation; only used when iig_use_discriminator is true", "IIG");
-    cl.addParameter("iig_evaluation_discriminator2_file_name", iig_evaluation_discriminator2_file_name, "the file name of discriminator 2 model weights for IIG evaluation; only used when iig_use_discriminator is true", "IIG");
-    cl.addParameter("iig_evaluation_player1_pimc_repeat", iig_evaluation_player1_pimc_repeat, "the number of PIMC trees for player 1 in IIG evaluation", "IIG");
-    cl.addParameter("iig_evaluation_player2_pimc_repeat", iig_evaluation_player2_pimc_repeat, "the number of PIMC trees for player 2 in IIG evaluation", "IIG");
 
     // environment parameters
     cl.addParameter("env_board_size", env_board_size, "the size of board", "Environment");
