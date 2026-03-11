@@ -94,9 +94,9 @@ void ArenaThread::handleSearchDone(int actor_id)
         std::cout << "game_over " << actor_id << " "
                   << env::playerToChar(actor->getSearchAction().getPlayer()) << " "
                   << config::iig_player_file_name << " "
-                  << config::iig_discriminator_file_name << " "
+                  << "\"" << config::iig_discriminator_file_name << "\" "
                   << config::actor_pimc_repeat << " "
-                  << config::iig_arena_tag << std::endl;
+                  << "\"" << config::iig_arena_tag << "\" " << std::endl;
         std::cout << "clear_board " << actor_id << std::endl;
         if (actor->getSearchAction().getPlayer() == env::Player::kPlayer1) {
             getSharedData()->set_genmove_ids_.push_back(actor_id);
@@ -163,9 +163,9 @@ void Arena::run()
             int actor_id = std::stoi(commands[1]);
             env::Player opp_player = env::charToPlayer(commands[2][0]);
             std::string opp_player_nn_file_name = commands[3];
-            std::string opp_discriminator_nn_file_name = (config::iig_use_discriminator ? commands[4] : "");
-            std::string opp_pimc_repeat = (config::iig_use_discriminator ? commands[5] : commands[4]);
-            std::string opp_tag = (config::iig_use_discriminator ? (commands.size() < 7 ? "" : commands[6]) : (commands.size() < 6 ? "" : commands[5]));
+            std::string opp_discriminator_nn_file_name = commands[4].substr(1, commands[4].size() - 2);
+            std::string opp_pimc_repeat = commands[5];
+            std::string opp_tag = commands[6].substr(1, commands[6].size() - 2);
             std::shared_ptr<BaseActor>& actor = getSharedData()->actors_[actor_id];
             std::cerr << "[GAME_LOG] "
                       << actor->getRecord({{"B_NN", opp_player == env::Player::kPlayer1 ? opp_player_nn_file_name : config::iig_player_file_name},

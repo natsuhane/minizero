@@ -5,13 +5,12 @@ if [ $# -lt 1 ]; then
     exit 1
 fi
 
-grep_str=""
+files=""
 for str in "$@"; do
-    grep_str+="$str\|"
+    files+=$(ls -rt arena/$str)" "
 done
-grep_str=${grep_str%\\|}
 
-for file in $(ls -rt arena/* | grep "$grep_str"); do
+for file in $files; do
     p1_folder=$(echo $file | cut -d '/' -f2 | cut -d '.' -f1 | awk -F "_vs_" '{ print $1; }' | awk -F "_" '{ for(i=1;i<=NF-5;++i) { printf $i"_"; } print $(NF-4); }')
     p2_folder=$(echo $file | cut -d '/' -f2 | cut -d '.' -f1 | awk -F "_vs_" '{ print $2; }' | awk -F "_" '{ for(i=1;i<=NF-5;++i) { printf $i"_"; } print $(NF-4); }')
     p1_nn=$(echo $file | cut -d '/' -f2 | cut -d '.' -f1 | awk -F "_vs_" '{ print $1; }' | awk -F "_" -v folder=$p1_folder '{ print folder"/model/weight_iter_"$(NF-3)".pt"; }')
@@ -90,4 +89,4 @@ for file in $(ls -rt arena/* | grep "$grep_str"); do
                     wrW, totalW, file;
             # print wr"/"total, wrB"/"totalB, wrW"/"totalW, first_name, second_name;
         }'
-done
+done | awk '{print $NF, $0}' | sort -V | cut -d' ' -f2-

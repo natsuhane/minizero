@@ -32,11 +32,12 @@ public:
     std::vector<float> getFeatures(utils::Rotation rotation = utils::Rotation::kRotationNone) const override;
     int getNumStones() const { return num_stones_; }
 
-    inline int getNumInputChannels() const override { return 4; }
+    inline int getNumInputChannels() const override { return 18; }
 
 private:
     Player view_player_;
     int num_stones_;
+    std::vector<std::vector<Cell>> board_history_;
 };
 
 class DarkHexEnv : public ImperfectInformationEnv<DarkHexAction, hex::HexEnv, ImperfectHexEnv> {
@@ -53,7 +54,7 @@ public:
     bool act(const std::vector<std::string>& action_string_args) override { return act(DarkHexAction(action_string_args, getBoardSize())); }
     void sampleOneInformationSet(int seed = utils::Random::randInt()) override;
     std::vector<float> getPlayerFeatures(utils::Rotation rotation = utils::Rotation::kRotationNone) const override;
-    std::vector<float> getDiscriminatorFeatures(utils::Rotation rotation = utils::Rotation::kRotationNone) const override;
+    std::vector<float> getDiscriminatorFeatures(utils::Rotation rotation = utils::Rotation::kRotationNone) const override { return imperfect_env_.get(getTurn()).getFeatures(rotation); }
 
     int getNumPlayerInputChannels() const override { return 6; }
     int getNumDiscriminatorInputChannels() const override { return imperfect_env_.get(getTurn()).getNumInputChannels(); }

@@ -27,6 +27,7 @@ void ImperfectHexEnv::reset()
 {
     hex::HexEnv::reset();
     num_stones_ = 0;
+    board_history_.clear();
 }
 
 bool ImperfectHexEnv::act(const DarkHexAction& action)
@@ -34,26 +35,33 @@ bool ImperfectHexEnv::act(const DarkHexAction& action)
     if (!isLegalAction(action)) { return false; }
     bool success = hex::HexEnv::act(action);
     if (!success) { return false; }
+    board_history_.push_back(getBoard());
     if (action.getPlayer() == view_player_) { ++num_stones_; }
     return true;
 }
 
 std::vector<float> ImperfectHexEnv::getFeatures(utils::Rotation rotation /*= utils::Rotation::kRotationNone*/) const
 {
-    /*  4 channels:
-        0~1. our/opponent's stones in my imperfect view
-        2. black turn
-        3. white turn
+    /*  18 channels:
+        0~7. our stones for last 8 turns
+        8~15. known opponent stones for last 8 turns
+        16. black turn
+        17. white turn
     */
     int num_grids = board_size_ * board_size_;
+    Player next_turn = getNextPlayer(view_player_, kDarkHexNumPlayer);
     std::vector<float> features(getNumInputChannels() * num_grids, 0.0f);
-    for (int pos = 0; pos < num_grids; ++pos) {
-        features[pos] = (getBoard()[pos].player == turn_ ? 1.0f : 0.0f);
-        features[num_grids + pos] = (getBoard()[pos].player == getNextPlayer(turn_, kDarkHexNumPlayer) ? 1.0f : 0.0f);
+    for (int i = 0; i < 8; ++i) { // 0~15 channels
+        int index = static_cast<int>(board_history_.size()) - 1 - i;
+        if (index < 0 || index >= static_cast<int>(board_history_.size())) { break; }
+        const std::vector<Cell>& past_board = board_history_[index];
+        for (int pos = 0; pos < num_grids; ++pos) {
+            if (past_board[pos].player == view_player_) { features[i * num_grids + pos] = 1.0f; }
+            if (past_board[pos].player == next_turn) { features[(i + 8) * num_grids + pos] = 1.0f; }
+        }
     }
-    std::fill(features.begin() + (view_player_ == Player::kPlayer1 ? 2 : 3) * num_grids,
-              features.begin() + (view_player_ == Player::kPlayer1 ? 3 : 4) * num_grids, 1.0f);
-
+    std::fill(features.begin() + (view_player_ == Player::kPlayer1 ? 16 : 17) * num_grids,
+              features.begin() + (view_player_ == Player::kPlayer1 ? 17 : 18) * num_grids, 1.0f);
     return features;
 }
 
@@ -117,9 +125,10 @@ void DarkHexEnv::sampleOneInformationSet(int seed /*= utils::Random::randInt()*/
 std::vector<float> DarkHexEnv::getPlayerFeatures(utils::Rotation rotation /*= utils::Rotation::kRotationNone*/) const
 {
     /* 6 channels:
-        0. our all stone
-        1. opponent all stone
-        2-3. turn
+        hex features (4 channels)
+            0. our all stone
+            1. opponent all stone
+            2-3. turn
         4. we known opp's stone
         5. opp knowns our stone
     */
@@ -137,12 +146,6 @@ std::vector<float> DarkHexEnv::getPlayerFeatures(utils::Rotation rotation /*= ut
 }
 
 // TODO
-std::vector<float> DarkHexEnv::getDiscriminatorFeatures(utils::Rotation rotation /*= utils::Rotation::kRotationNone*/) const
-{
-    std::vector<float> dummy;
-    return dummy;
-}
-
 std::pair<std::vector<float>, std::vector<float>> DarkHexEnvLoader::getISGeneratorFeaturesAndLabel(const int pos, utils::Rotation rotation /*= utils::Rotation::kRotationNone*/) const
 {
     std::pair<std::vector<float>, std::vector<float>> dummy;
