@@ -318,7 +318,7 @@ void Console::cmdSiameseValue(const std::vector<std::string>& args)
         std::cerr << "Top " << n << " Negative Distance: " << std::endl;
         float min = std::numeric_limits<float>::max(), max = std::numeric_limits<float>::lowest(), sum = 0.0f;
         std::vector<float> tmp;
-        for (size_t i = 0; i < n && i < all_index.size(); ++i) {
+        for (int i = 0; i < n && i < static_cast<int>(all_index.size()); ++i) {
             float dist = all_index[i].second;
             min = std::min(min, dist);
             max = std::max(max, dist);
