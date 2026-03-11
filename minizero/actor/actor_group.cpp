@@ -232,6 +232,7 @@ void ActorGroup::handleCommand(const std::string& command_prefix, const std::str
         config::nn_file_name = args[1];
         for (auto& network : getSharedData()->networks_) { network->loadModel(config::nn_file_name, network->getGPUID()); }
     } else if (command_prefix == "load_discriminator_model") {
+        // TODO: only support siamese discriminator now
         std::cerr << "[command] " << command << std::endl;
         std::vector<std::string> args = utils::stringToVector(command);
         assert(args.size() == 2);

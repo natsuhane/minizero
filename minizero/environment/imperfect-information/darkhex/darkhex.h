@@ -81,6 +81,7 @@ public:
         if (key == "SZ") { board_size_ = std::stoi(value); }
     }
 
+    // TODO: not implement yet
     std::vector<float> getActionFeatures(const int pos, utils::Rotation rotation = utils::Rotation::kRotationNone) const override { return {}; }
     std::pair<std::vector<float>, std::vector<float>> getISGeneratorFeaturesAndLabel(const int pos, utils::Rotation rotation = utils::Rotation::kRotationNone) const override;
 

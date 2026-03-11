@@ -6,7 +6,7 @@
 #include "create_network.h"
 #include "evaluator.h"
 #include "git_info.h"
-#include "data_generator.h"
+#include "go.h"
 #include "info_set_generator.h"
 #include "info_set_generator_network.h"
 #include "obs_recover.h"
@@ -175,11 +175,13 @@ void ModeHandler::runZeroServer()
 
 void ModeHandler::runZeroTrainingName()
 {
-    std::cout << Environment().name()                  // name for environment
     std::cout << Environment().name()                                                           // name for environment
               << "_" << (config::actor_use_gumbel ? "g" : "") << config::nn_type_name[0] << "z" // network & training algorithm
               << "_" << config::nn_num_blocks << "b"                                            // number of blocks
               << "x" << config::nn_num_hidden_channels                                          // number of hidden channels
+              << "_" << (config::iig_use_merge_pimc ? "maple" : "pimc")                         // whether to use merge pimc for iig
+              << "_" << config::iig_max_infoset_size << "c" << config::actor_pimc_repeat        // iig max infoset size & pimc repeat times for iig
+              << (config::iig_use_discriminator ? "_siamese" : "")                              // whether to use discriminator for iig
               << "-" << GIT_SHORT_HASH << std::endl;                                            // git hash info
 }
 
@@ -226,6 +228,7 @@ void ModeHandler::runRecoverObs()
 // for info set generator
 void ModeHandler::runVisualizeSgf()
 {
+    // TODO: make it general to all iig games
 #if PHANTOMGO
     // find target game by id
     EnvironmentLoader env_loader;
@@ -245,7 +248,7 @@ void ModeHandler::runVisualizeSgf()
     // true board
     std::cerr << "Loaded environment up to step " << config::iig_game_step << std::endl;
     for (int pos = 0; pos < config::iig_game_step; ++pos) { true_env.act(env_loader.getActionPairs()[pos].first); }
-    sgf_outputs.push_back(true_env.toSGFString());
+    sgf_outputs.push_back(true_env.getPerfectEnv().toSGFString());
     prob_outputs.push_back(0.0f);
     prob_outputs_per_step.push_back(std::vector<float>());
 
@@ -254,8 +257,14 @@ void ModeHandler::runVisualizeSgf()
     std::vector<iig::ISItem> info_set = is_generator.generate(true_env);
     int true_board_id = 0;
     for (const auto& item : info_set) {
-        sgf_outputs.push_back(item.env_.toSGFString());
-            if (sgf_outputs.back() == sgf_outputs[0]) { true_board_id = sgf_outputs.size() - 1; }
+        sgf_outputs.push_back(item.env_.getPerfectEnv().toSGFString());
+
+        env::go::GoBitboard known_b = true_env.getPerfectEnv().getStoneBitboard().get(env::Player::kPlayer1);
+        env::go::GoBitboard known_w = true_env.getPerfectEnv().getStoneBitboard().get(env::Player::kPlayer2);
+        env::go::GoBitboard new_b = item.env_.getPerfectEnv().getStoneBitboard().get(env::Player::kPlayer1);
+        env::go::GoBitboard new_w = item.env_.getPerfectEnv().getStoneBitboard().get(env::Player::kPlayer2);
+        if (known_b == new_b && known_w == new_w) { true_board_id = sgf_outputs.size() - 1; }
+
         prob_outputs.push_back(item.acc_prob_);
         prob_outputs_per_step.push_back(item.probs_);
     }

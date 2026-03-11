@@ -96,6 +96,7 @@ bool ImperfectGoEnv::isLegalAction(const PhantomGoAction& action) const
 
 std::vector<float> ImperfectGoEnv::getFeatures(utils::Rotation rotation /*= utils::Rotation::kRotationNone*/) const
 {
+    // TODO: If I capture opponent's stones, record the surrounding positions ("opponent knows my stones" info, 1 plane? 8 plane?)
     /*  34 channels:
         0~7. our position for last 8 turns
         8~15. known opponent position for last 8 turns
@@ -320,13 +321,13 @@ PhantomGoEnv PhantomGoEnv::createSampledEnvironment(int seed) const
     }
 
     // play unknown opponent stones
-    std::uniform_int_distribution<int> int_distribution;
     std::vector<PhantomGoAction> opp_legal_actions;
     for (int pos = 0; pos < imperfect_env.getBoardSize() * imperfect_env.getBoardSize(); ++pos) {
         PhantomGoAction action(pos, next_turn);
         if (!imperfect_env.isLegalAction(action)) { continue; }
         opp_legal_actions.push_back(action);
     }
+    std::uniform_int_distribution<int> int_distribution;
     for (int i = 0; i < remaining_opp_stones && !opp_legal_actions.empty(); ++i) {
         int selected_index = int_distribution(generator) % opp_legal_actions.size();
         const PhantomGoAction& action = opp_legal_actions[selected_index];

@@ -58,9 +58,12 @@ Action ZeroActor::think(bool with_play /*= false*/, bool display_board /*= false
         if (!isSearchDone()) { handleSearchDone(); }
         bool success = true;
         if (with_play) {
+            // TODO: use config to control whether can play consecutive actions within one think
             if (!env_.isLegalAction(getSearchAction())) { success = false; }
             act(getSearchAction());
         }
+        // TODO: use config to control display board
+        if (display_board) { std::cerr << env_.toString() << mcts_search_data_.search_info_ << std::endl; }
         if (!success) { continue; }
         return getSearchAction();
     }

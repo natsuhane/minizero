@@ -44,7 +44,7 @@ fi
 
 sp_executable_file=build/${game_type}/minizero_${game_type}
 op_executable_file=minizero/learner/train.py
-dop_executable_file=minizero/learner/train_siamese.py
+dop_executable_file=minizero/learner/train_siamese.py	# TODO: combine train_discriminator.py and train_siamese.py into one file
 while :; do
 	case $1 in
 		-h|--help) shift; usage

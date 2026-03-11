@@ -50,6 +50,7 @@ class SiameseNetwork(nn.Module):
         self.num_value_hidden_channels = num_value_hidden_channels
         self.discrete_value_size = discrete_value_size
 
+        # TODO: use constructor arguments instead of hardcoding
         pre_embed_dim = 128
         embed_dim = 512
         hidden_channels = 64

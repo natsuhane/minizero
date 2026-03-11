@@ -10,10 +10,6 @@ __pycache__
 *_gaz_*/
 *_mz_*/
 *_gmz_*/
-*_sz_*/
-*-siamese-*/
-*_siamese_*/
-*_info_set_generator_*/
 
 # sgf files
 *.sgf
@@ -24,3 +20,4 @@ sgf/
 .container_root
 *.png
 *.csv
+minizero*

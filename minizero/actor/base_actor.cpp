@@ -22,20 +22,17 @@ void BaseActor::resetSearch()
 bool BaseActor::act(const Action& action)
 {
     bool can_act = env_.act(action);
-    if (can_act) {
-        action_info_history_.resize(env_.getActionHistory().size());
-        action_info_history_.back() = getActionInfo();
-    }
+    // TODO: how to handle invalid action?
+    action_info_history_.resize(env_.getActionHistory().size());
+    action_info_history_.back() = getActionInfo();
     return can_act;
 }
 
 bool BaseActor::act(const std::vector<std::string>& action_string_args)
 {
     bool can_act = env_.act(action_string_args);
-    if (can_act) {
-        action_info_history_.resize(env_.getActionHistory().size());
-        action_info_history_.back() = getActionInfo();
-    }
+    action_info_history_.resize(env_.getActionHistory().size());
+    action_info_history_.back() = getActionInfo();
     return can_act;
 }
 

@@ -43,7 +43,7 @@ name_suffix=""
 gpu_list=$(nvidia-smi --query-gpu=index,memory.used,utilization.gpu --format=csv,noheader,nounits | sort -k2n -k3n | head -1 | cut -d, -f1)
 sp_executable_file=build/${game_type}/minizero_${game_type}
 op_executable_file=minizero/learner/train.py
-dop_executable_file=minizero/learner/train_siamese.py
+dop_executable_file=minizero/learner/train_siamese.py	# TODO: combine train_discriminator.py and train_siamese.py into one file
 overwrite_conf_str=""
 link_sgf=""
 while :; do

@@ -333,6 +333,7 @@ std::vector<float> GoEnv::getFeatures(utils::Rotation rotation /*= utils::Rotati
 
 std::vector<float> GoEnv::getInfoSetGeneratorFeatures(int move_number, utils::Rotation rotation /*= utils::Rotation::kRotationNone*/) const
 {
+    // TODO: remove isgenerator from Go
     /* 28 channels:
         0~7. our previous 8 boards
         8~15. opponent previous 8 boards
