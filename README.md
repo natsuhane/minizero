@@ -284,6 +284,42 @@ To interact with a trained model using [Go Text Protocol (GTP)](http://www.lysat
 tools/quick-run.sh console go go_9x9_az_n200 -conf_str env_board_size=9:actor_num_simulation=800:actor_select_action_by_count=true:actor_select_action_by_softmax_count=false:actor_use_dirichlet_noise=false:actor_use_gumbel_noise=false
 ```
 
+#### PhantomGo / DarkHex Web GUI
+
+Use `tools/console_gui_server.py` when you want a browser UI for PhantomGo or DarkHex. It starts console mode, then shows the perfect board and both player views in the browser.
+
+Build the game target first:
+
+```bash
+scripts/build.sh phantomgo release
+```
+
+Start the GUI server with a model:
+
+```bash
+DIR=phantomgo_9x9_az_3bx256_maple_50c5_siamese-d90722
+python3 tools/console_gui_server.py \
+  --host 127.0.0.1 \
+  --port 8765 \
+  --game phantomgo \
+  --model "$DIR/model/weight_iter_40000.pt" \
+  --discriminator_model "$DIR/discriminator_model/weight_iter_40000.pt" \
+  -conf_file cfg/phantomgo_train.cfg \
+  -conf_str "actor_num_simulation=50"
+```
+
+Open `http://127.0.0.1:8765` in your browser.
+
+If your browser cannot reach the remote GUI server directly, forward the port:
+
+```bash
+ssh -L 8765:127.0.0.1:8765 USER@SERVER
+```
+
+For DarkHex, replace `phantomgo` with `darkhex`, use `cfg/darkhex_train.cfg`, and rebuild with `scripts/build.sh darkhex release`.
+
+If the model was trained with siamese/MAPLE, pass `--discriminator_model`. If it was not, omit `--discriminator_model`.
+
 For more console details, please refer to [this instructions](docs/Console.md).
 
 ## Development

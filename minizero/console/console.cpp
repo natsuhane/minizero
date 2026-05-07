@@ -7,6 +7,7 @@
 #include "time_system.h"
 #include <algorithm>
 #include <climits>
+#include <functional>
 #include <iomanip>
 #include <iostream>
 #include <limits>
@@ -16,6 +17,178 @@
 namespace minizero::console {
 
 using namespace network;
+
+namespace {
+
+    std::string jsonEscape(const std::string& value)
+    {
+        std::ostringstream oss;
+        for (unsigned char c : value) {
+            switch (c) {
+                case '\\': oss << "\\\\"; break;
+                case '"': oss << "\\\""; break;
+                case '\n': oss << "\\n"; break;
+                case '\r': oss << "\\r"; break;
+                case '\t': oss << "\\t"; break;
+                default:
+                    if (c < 0x20) {
+                        oss << "\\u" << std::hex << std::setw(4) << std::setfill('0') << static_cast<int>(c) << std::dec;
+                    } else {
+                        oss << static_cast<char>(c);
+                    }
+                    break;
+            }
+        }
+        return oss.str();
+    }
+
+    std::string jsonString(const std::string& value)
+    {
+        return "\"" + jsonEscape(value) + "\"";
+    }
+
+    std::string serializeAction(const Action& action)
+    {
+        std::ostringstream oss;
+        oss << "{"
+            << "\"player\":" << jsonString(std::string(1, env::playerToChar(action.getPlayer()))) << ","
+            << "\"move\":" << jsonString(action.toConsoleString()) << ","
+            << "\"action_id\":" << action.getActionID()
+            << "}";
+        return oss.str();
+    }
+
+    std::string serializeActionHistory(const std::vector<Action>& actions)
+    {
+        std::ostringstream oss;
+        oss << "[";
+        for (size_t i = 0; i < actions.size(); ++i) {
+            if (i != 0) { oss << ","; }
+            oss << serializeAction(actions[i]);
+        }
+        oss << "]";
+        return oss.str();
+    }
+
+    std::string serializeCharGrid(int board_size, const std::function<char(int)>& get_cell)
+    {
+        // Emit rows from top to bottom so the browser can render them directly.
+        std::ostringstream oss;
+        oss << "[";
+        for (int row = board_size - 1; row >= 0; --row) {
+            if (row != board_size - 1) { oss << ","; }
+            oss << "[";
+            for (int col = 0; col < board_size; ++col) {
+                if (col != 0) { oss << ","; }
+                oss << jsonString(std::string(1, get_cell(row * board_size + col)));
+            }
+            oss << "]";
+        }
+        oss << "]";
+        return oss.str();
+    }
+
+    std::string serializeBoolGrid(int board_size, const std::function<bool(int)>& get_cell)
+    {
+        // Keep the tried-position grid aligned with serializeCharGrid row order.
+        std::ostringstream oss;
+        oss << "[";
+        for (int row = board_size - 1; row >= 0; --row) {
+            if (row != board_size - 1) { oss << ","; }
+            oss << "[";
+            for (int col = 0; col < board_size; ++col) {
+                if (col != 0) { oss << ","; }
+                oss << (get_cell(row * board_size + col) ? "true" : "false");
+            }
+            oss << "]";
+        }
+        oss << "]";
+        return oss.str();
+    }
+
+    char boardToken(env::Player player)
+    {
+        switch (player) {
+            case env::Player::kPlayer1: return 'B';
+            case env::Player::kPlayer2: return 'W';
+            default: return '.';
+        }
+    }
+
+#if PHANTOMGO || DARKHEX
+    std::string serializeIIGStatePrefix(const Environment& env, const std::string& board_type, bool pass_enabled)
+    {
+        // Common metadata shared by PhantomGo and DarkHex board_state responses.
+        std::ostringstream oss;
+        oss << "{"
+            << "\"game\":" << jsonString(env.name()) << ","
+            << "\"board_size\":" << env.getBoardSize() << ","
+            << "\"board_type\":" << jsonString(board_type) << ","
+            << "\"pass_enabled\":" << (pass_enabled ? "true" : "false") << ","
+            << "\"turn\":" << jsonString(std::string(1, env::playerToChar(env.getTurn()))) << ","
+            << "\"is_terminal\":" << (env.isTerminal() ? "true" : "false") << ","
+            << "\"last_move\":" << (env.getActionHistory().empty() ? "null" : serializeAction(env.getActionHistory().back())) << ","
+            << "\"action_history\":" << serializeActionHistory(env.getActionHistory()) << ","
+            << "\"perfect_action_history\":" << serializeActionHistory(env.getPerfectEnv().getActionHistory()) << ","
+            << "\"boards\":{";
+        return oss.str();
+    }
+
+    std::string serializeBoardEntry(const std::string& label, const std::string& rows, const std::string& tried_rows = "")
+    {
+        std::ostringstream oss;
+        oss << "{\"label\":" << jsonString(label) << ",\"rows\":" << rows;
+        if (!tried_rows.empty()) { oss << ",\"tried_rows\":" << tried_rows; }
+        oss << "}";
+        return oss.str();
+    }
+
+#if PHANTOMGO
+    std::string serializeGoBoard(const minizero::env::go::GoEnv& env)
+    {
+        return serializeCharGrid(env.getBoardSize(), [&env](int pos) {
+            return boardToken(env.getGrid(pos).getPlayer());
+        });
+    }
+
+    std::string serializeCurrentGameState(const Environment& env)
+    {
+        // PhantomGo exposes the perfect board plus each player's imperfect view.
+        const auto& black_view = env.getImperfectEnv(env::Player::kPlayer1);
+        const auto& white_view = env.getImperfectEnv(env::Player::kPlayer2);
+        const int board_size = env.getBoardSize();
+
+        std::ostringstream oss;
+        oss << serializeIIGStatePrefix(env, "square", true)
+            << "\"perfect\":" << serializeBoardEntry("Perfect", serializeGoBoard(env.getPerfectEnv())) << ","
+            << "\"black_view\":" << serializeBoardEntry("Black View", serializeGoBoard(black_view), serializeBoolGrid(board_size, [&black_view](int pos) { return black_view.getTriedPos().test(pos); })) << ","
+            << "\"white_view\":" << serializeBoardEntry("White View", serializeGoBoard(white_view), serializeBoolGrid(board_size, [&white_view](int pos) { return white_view.getTriedPos().test(pos); }))
+            << "}}";
+        return oss.str();
+    }
+#elif DARKHEX
+    std::string serializeHexBoard(const minizero::env::hex::HexEnv& env)
+    {
+        return serializeCharGrid(env.getBoardSize(), [&env](int pos) {
+            return boardToken(env.getBoard()[pos].player);
+        });
+    }
+
+    std::string serializeCurrentGameState(const Environment& env)
+    {
+        // DarkHex uses the same B/W tokens internally, but the GUI labels them Red/Blue.
+        std::ostringstream oss;
+        oss << serializeIIGStatePrefix(env, "hex", false)
+            << "\"perfect\":" << serializeBoardEntry("Perfect", serializeHexBoard(env.getPerfectEnv())) << ","
+            << "\"black_view\":" << serializeBoardEntry("Black View", serializeHexBoard(env.getImperfectEnv(env::Player::kPlayer1))) << ","
+            << "\"white_view\":" << serializeBoardEntry("White View", serializeHexBoard(env.getImperfectEnv(env::Player::kPlayer2)))
+            << "}}";
+        return oss.str();
+    }
+#endif
+#endif
+
+} // namespace
 
 Console::Console()
     : network_(nullptr),
@@ -36,6 +209,7 @@ Console::Console()
     RegisterFunction("pv", this, &Console::cmdPV);
     RegisterFunction("pv_string", this, &Console::cmdPVString);
     RegisterFunction("game_string", this, &Console::cmdGameString);
+    RegisterFunction("board_state", this, &Console::cmdBoardState);
     RegisterFunction("load_model", this, &Console::cmdLoadModel);
     RegisterFunction("load_game_string", this, &Console::cmdLoadGameString);
     RegisterFunction("s_value", this, &Console::cmdSiameseValue);
@@ -254,6 +428,23 @@ void Console::cmdGameString(const std::vector<std::string>& args)
     const Environment& env_transition = actor_->getEnvironment();
     env_loader.loadFromEnvironment(env_transition);
     reply(ConsoleResponse::kSuccess, env_loader.toString());
+}
+
+void Console::cmdBoardState(const std::vector<std::string>& args)
+{
+    if (!checkArgument(args, 1, 1)) { return; }
+
+#if PHANTOMGO || DARKHEX
+    reply(ConsoleResponse::kSuccess, serializeCurrentGameState(actor_->getEnvironment()));
+#else
+    std::ostringstream oss;
+    const Environment& env_transition = actor_->getEnvironment();
+    oss << "{"
+        << "\"game\":" << jsonString(env_transition.name()) << ","
+        << "\"unsupported\":true"
+        << "}";
+    reply(ConsoleResponse::kSuccess, oss.str());
+#endif
 }
 
 void Console::cmdLoadModel(const std::vector<std::string>& args)

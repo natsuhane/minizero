@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>MiniZero IIG Console</title>
+    <link rel="stylesheet" href="/console_gui.css">
+</head>
+
+<body>
+    <div class="app-shell">
+        <header class="topbar">
+            <div>
+                <p class="eyebrow" id="game-label">MiniZero IIG</p>
+            </div>
+            <div class="engine-state">
+                <span class="status-dot" id="status-dot"></span>
+                <span id="session-pill">Disconnected</span>
+            </div>
+        </header>
+
+        <section class="lab-bar" aria-label="Match controls">
+            <label class="compact-field">
+                <span>Mode</span>
+                <select id="mode-select">
+                    <option value="human-ai">Human vs AI</option>
+                    <option value="manual">Manual</option>
+                    <option value="ai-auto">AI Auto</option>
+                </select>
+            </label>
+
+            <label class="compact-field" id="human-color-field">
+                <span>Human</span>
+                <select id="human-color-select">
+                    <option value="B">Black</option>
+                    <option value="W">White</option>
+                </select>
+            </label>
+
+            <label class="compact-field" id="delay-field">
+                <span>Delay</span>
+                <select id="delay-select">
+                    <option value="500">0.5s</option>
+                    <option value="1000" selected>1s</option>
+                    <option value="2000">2s</option>
+                </select>
+            </label>
+
+            <button class="quiet" id="auto-toggle-button" type="button">Run AI</button>
+        </section>
+
+        <main>
+            <section class="mode-note" id="mode-hint">
+                Click a point to play. AI answers automatically.
+            </section>
+
+            <section class="board-stage" aria-label="IIG boards">
+                <article class="board-card" data-board-panel="perfect">
+                    <header class="board-card-header">
+                        <div>
+                            <span>Perfect</span>
+                            <h2>Full Board</h2>
+                        </div>
+                        <label class="view-switch">
+                            <input id="toggle-perfect" type="checkbox" checked>
+                            <span>Show</span>
+                        </label>
+                    </header>
+                    <div class="board-host" id="board-perfect"></div>
+                </article>
+
+                <article class="board-card" data-board-panel="black">
+                    <header class="board-card-header">
+                        <div>
+                            <span>Black</span>
+                            <h2>Black View</h2>
+                        </div>
+                        <label class="view-switch">
+                            <input id="toggle-black" type="checkbox" checked>
+                            <span>Show</span>
+                        </label>
+                    </header>
+                    <div class="board-host" id="board-black"></div>
+                </article>
+
+                <article class="board-card" data-board-panel="white">
+                    <header class="board-card-header">
+                        <div>
+                            <span>White</span>
+                            <h2>White View</h2>
+                        </div>
+                        <label class="view-switch">
+                            <input id="toggle-white" type="checkbox" checked>
+                            <span>Show</span>
+                        </label>
+                    </header>
+                    <div class="board-host" id="board-white"></div>
+                </article>
+            </section>
+
+            <section class="action-dock" aria-label="Move controls">
+                <button id="genmove-auto-button" type="button">Genmove</button>
+                <button class="quiet" id="pass-button" type="button">Pass</button>
+                <button class="quiet danger" id="clear-button" type="button">Clear</button>
+            </section>
+
+            <details class="record-panel" aria-label="Replay import and playback">
+                <summary>Replay</summary>
+                <div class="record-grid">
+                    <label class="field field-wide">
+                        <span>MiniZero SGF text</span>
+                        <textarea id="record-text" rows="4" placeholder="Paste or export a MiniZero record, e.g. (;GM[phantomgo]SZ[9];B[40];W[12])"></textarea>
+                    </label>
+
+                    <div class="record-actions">
+                        <button class="quiet" id="import-record-button" type="button">Import</button>
+                        <button class="quiet" id="export-record-button" type="button">Export</button>
+                    </div>
+
+                    <div class="replay-controls" aria-label="Replay controls">
+                        <button class="quiet" id="replay-prev-5-button" type="button">Prev 5</button>
+                        <button class="quiet" id="replay-prev-button" type="button">Prev</button>
+                        <button class="quiet" id="replay-next-button" type="button">Next</button>
+                        <button class="quiet" id="replay-next-5-button" type="button">Next 5</button>
+                        <input id="replay-step-range" type="range" min="0" max="0" value="0">
+                        <span id="replay-step-label">No record</span>
+                    </div>
+                </div>
+            </details>
+
+            <details class="move-strip" aria-label="Move history">
+                <summary>History</summary>
+                <ol id="history-observed"></ol>
+            </details>
+
+            <details class="advanced-panel">
+                <summary>Advanced</summary>
+                <div class="advanced-grid">
+                    <label class="field">
+                        <span>Working directory</span>
+                        <input id="cwd-input" type="text" value="">
+                    </label>
+
+                    <label class="field field-wide">
+                        <span>Launch command</span>
+                        <textarea id="command-input" rows="4" placeholder="Set by tools/console_gui_server.py --game ... --model ..."></textarea>
+                    </label>
+
+                    <label class="field">
+                        <span>Load player model</span>
+                        <div class="inline-input">
+                            <input id="model-input" type="text" placeholder="/path/to/weight_iter.pt">
+                            <button class="quiet" id="load-model-button" type="button">Load</button>
+                        </div>
+                    </label>
+
+                    <label class="field">
+                        <span>Raw command</span>
+                        <div class="inline-input">
+                            <input id="command-raw-input" type="text" placeholder="showboard">
+                            <button class="quiet" id="send-command-button" type="button">Send</button>
+                        </div>
+                    </label>
+
+                    <section class="field">
+                        <span>Engine process</span>
+                        <button class="quiet danger" id="stop-button" type="button">Disconnect</button>
+                    </section>
+
+                    <section class="field field-wide">
+                        <span>Engine log</span>
+                        <pre class="log-box" id="stderr-log">No stderr output yet.</pre>
+                    </section>
+                </div>
+            </details>
+        </main>
+    </div>
+
+    <script src="/console_gui.js"></script>
+</body>
+
+</html>

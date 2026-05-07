@@ -61,6 +61,7 @@ protected:
     void cmdPV(const std::vector<std::string>& args);
     void cmdPVString(const std::vector<std::string>& args);
     void cmdGameString(const std::vector<std::string>& args);
+    void cmdBoardState(const std::vector<std::string>& args);
     void cmdLoadModel(const std::vector<std::string>& args);
     void cmdLoadGameString(const std::vector<std::string>& args);
     void cmdSiameseValue(const std::vector<std::string>& args);
