@@ -152,6 +152,34 @@ function replayLoaded() {
     return stateStore.replay?.loaded === true;
 }
 
+function viewingReplayPrefix() {
+    if (!replayLoaded()) {
+        return false;
+    }
+    return (stateStore.replay.current_step || 0) < (stateStore.replay.total_steps || 0);
+}
+
+function ownerForBoard(boardKey) {
+    if (boardKey === "black_view") {
+        return "B";
+    }
+    if (boardKey === "white_view") {
+        return "W";
+    }
+    return null;
+}
+
+function boardForPlayer(player) {
+    return player === "B" ? "black_view" : "white_view";
+}
+
+function canPlayOnBoard(boardKey) {
+    if (boardKey === "perfect") {
+        return true;
+    }
+    return boardKey === boardForPlayer(playColor());
+}
+
 function setMessage(message, success = true) {
     stateStore.lastResult = { success, message };
 }
@@ -164,9 +192,6 @@ function canManualPlay() {
     if (!stateStore.status.running || stateStore.ui.busy || !stateStore.state || stateStore.state.is_terminal) {
         return false;
     }
-    if (replayLoaded()) {
-        return false;
-    }
     if (stateStore.ui.mode === "ai-auto") {
         return false;
     }
@@ -175,9 +200,6 @@ function canManualPlay() {
 
 function canUseGenmove() {
     if (!stateStore.status.running || stateStore.ui.busy || !stateStore.state || stateStore.state.is_terminal) {
-        return false;
-    }
-    if (replayLoaded()) {
         return false;
     }
     return stateStore.ui.mode !== "human-ai" || currentTurn() !== stateStore.ui.humanColor;
@@ -309,7 +331,7 @@ function renderModeHint() {
     }
 
     const turn = colorName(currentTurn());
-    if (replayLoaded()) {
+    if (viewingReplayPrefix()) {
         const current = stateStore.replay.current_step || 0;
         const total = stateStore.replay.total_steps || 0;
         if (stateStore.state.is_terminal && stateStore.finalScore) {
@@ -384,12 +406,14 @@ function renderReplayControls() {
     elements.replayStepLabel.textContent = `${current}/${total}`;
 }
 
-function createBoardCell(coord, token, tried, lastMove, position = {}) {
+function createBoardCell(coord, token, tried, lastMove, boardKey, position = {}) {
     const cell = document.createElement("button");
     cell.className = "cell";
     cell.type = "button";
     cell.title = coord;
     cell.dataset.coord = coord;
+    cell.tabIndex = canPlayOnBoard(boardKey) ? 0 : -1;
+    cell.classList.toggle("is-playable", canPlayOnBoard(boardKey));
 
     if (token === "B" || token === "W") {
         cell.classList.add(token === "B" ? "black" : "white");
@@ -415,11 +439,11 @@ function createBoardCell(coord, token, tried, lastMove, position = {}) {
         }
     });
 
-    cell.addEventListener("click", () => handleBoardClick(coord));
+    cell.addEventListener("click", () => handleBoardClick(coord, boardKey));
     return cell;
 }
 
-function renderSquareBoard(host, boardState, boardSize, lastMove) {
+function renderSquareBoard(host, boardState, boardSize, lastMove, boardKey) {
     // Build one CSS grid with labels on all four sides and cells in top-to-bottom order.
     const grid = document.createElement("div");
     grid.className = "board-grid square-board";
@@ -450,7 +474,7 @@ function renderSquareBoard(host, boardState, boardSize, lastMove) {
             const coord = coordFromTopRow(column, rowFromTop, boardSize);
             const token = boardState.rows[rowFromTop][column];
             const tried = boardState.tried_rows?.[rowFromTop]?.[column] || false;
-            grid.appendChild(createBoardCell(coord, token, tried, lastMove, {
+            grid.appendChild(createBoardCell(coord, token, tried, lastMove, boardKey, {
                 "first-row": rowFromTop === 0,
                 "last-row": rowFromTop === boardSize - 1,
                 "first-col": column === 0,
@@ -506,7 +530,7 @@ function pointsAttribute(points) {
     return points.map(([x, y]) => `${x.toFixed(2)},${y.toFixed(2)}`).join(" ");
 }
 
-function renderHexBoard(host, boardState, boardSize, lastMove) {
+function renderHexBoard(host, boardState, boardSize, lastMove, boardKey) {
     // DarkHex is rendered as SVG so the rhombus shape can scale without layout hacks.
     const board = document.createElement("div");
     board.className = "hex-board";
@@ -567,17 +591,18 @@ function renderHexBoard(host, boardState, boardSize, lastMove) {
             const coord = coordFromTopRow(column, rowFromTop, boardSize);
             const token = boardState.rows[rowFromTop][column];
             const points = hexPoints(centerX(column, rowFromTop), centerY(rowFromTop), radius);
+            const playable = canPlayOnBoard(boardKey);
             const cell = createSvgElement("polygon", {
-                class: `hex-cell${token === "B" ? " is-red" : ""}${token === "W" ? " is-blue" : ""}`,
+                class: `hex-cell${playable ? " is-playable" : ""}${token === "B" ? " is-red" : ""}${token === "W" ? " is-blue" : ""}`,
                 points: pointsAttribute(points),
-                tabindex: 0,
+                tabindex: playable ? 0 : -1,
                 "data-coord": coord,
             });
-            cell.addEventListener("click", () => handleBoardClick(coord));
+            cell.addEventListener("click", () => handleBoardClick(coord, boardKey));
             cell.addEventListener("keydown", (event) => {
                 if (event.key === "Enter" || event.key === " ") {
                     event.preventDefault();
-                    handleBoardClick(coord);
+                    handleBoardClick(coord, boardKey);
                 }
             });
             svg.appendChild(cell);
@@ -652,9 +677,9 @@ function renderBoard(host, boardState, boardSize, lastMove, boardType, boardKey)
 
     const boardLastMove = visibleLastMove(boardKey, boardState, boardSize, lastMove);
     if (boardType === "hex") {
-        renderHexBoard(host, boardState, boardSize, boardLastMove);
+        renderHexBoard(host, boardState, boardSize, boardLastMove, boardKey);
     } else {
-        renderSquareBoard(host, boardState, boardSize, boardLastMove);
+        renderSquareBoard(host, boardState, boardSize, boardLastMove, boardKey);
     }
 }
 
@@ -789,7 +814,9 @@ async function performMutation(path, body) {
             stateStore.replay = { loaded: false };
         }
         if (payload.result?.success === false) {
-            stateStore.lastResult = { success: false, message: payload.result.message || "Command failed." };
+            if (path !== "/api/play") {
+                stateStore.lastResult = { success: false, message: payload.result.message || "Command failed." };
+            }
         } else {
             stateStore.lastResult = { success: true, message: mutationMessage(path, body || {}, payload.result) };
         }
@@ -966,7 +993,7 @@ async function exportRecord() {
     }
 }
 
-async function handleBoardClick(coord) {
+async function handleBoardClick(coord, boardKey) {
     // Board clicks are accepted only when the selected test mode allows human input.
     if (!stateStore.status.running) {
         setMessage("Engine is not connected.", false);
@@ -981,11 +1008,6 @@ async function handleBoardClick(coord) {
         renderAll();
         return;
     }
-    if (replayLoaded()) {
-        setMessage("Clear the replay before manual play.", false);
-        renderAll();
-        return;
-    }
     if (stateStore.ui.mode === "ai-auto") {
         setMessage("Pause AI Auto before manual play.", false);
         renderAll();
@@ -993,6 +1015,10 @@ async function handleBoardClick(coord) {
     }
     if (!canManualPlay()) {
         setMessage("Waiting for AI.", false);
+        renderAll();
+        return;
+    }
+    if (!canPlayOnBoard(boardKey)) {
         renderAll();
         return;
     }

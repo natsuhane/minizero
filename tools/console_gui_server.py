@@ -199,6 +199,15 @@ def parse_minizero_record(text: str) -> MiniZeroRecord:
     return MiniZeroRecord(record, tags, actions)
 
 
+def _same_actions(left: list[dict[str, Any]], right: list[dict[str, Any]]) -> bool:
+    if len(left) != len(right):
+        return False
+    return all(
+        a.get("player") == b.get("player") and a.get("action_id") == b.get("action_id")
+        for a, b in zip(left, right)
+    )
+
+
 class ConsoleSession:
     def __init__(self) -> None:
         self._lock = threading.RLock()
@@ -424,6 +433,30 @@ class ReplaySession:
             self._current_step = 0
         return self.status()
 
+    def sync_from_current(self, session: ConsoleSession, only_if_empty: bool = False) -> dict[str, Any]:
+        """Use the engine's current game_string as replay source without losing future steps."""
+        with self._lock:
+            if only_if_empty and self._record is not None:
+                return self.status()
+
+        response = session.send_command("game_string")
+        if not response["success"]:
+            return self.status()
+
+        record = parse_minizero_record(response["message"])
+        with self._lock:
+            if not record.actions and self._record is None:
+                return {"loaded": False}
+
+            if self._record is not None:
+                current_prefix = self._record.actions[: self._current_step]
+                if _same_actions(record.actions, current_prefix):
+                    return self.status()
+
+            self._record = record
+            self._current_step = len(record.actions)
+        return self.status()
+
     def status(self) -> dict[str, Any]:
         with self._lock:
             if self._record is None:
@@ -467,6 +500,15 @@ class ReplaySession:
 
 SESSION = ConsoleSession()
 REPLAY = ReplaySession()
+
+
+def _redact_failed_play_result(result: dict[str, Any]) -> dict[str, Any]:
+    if result.get("success"):
+        return result
+    redacted = dict(result)
+    redacted["message"] = ""
+    redacted["raw_lines"] = []
+    return redacted
 
 
 def _conf_keys(conf_string: str) -> set[str]:
@@ -589,7 +631,9 @@ class ConsoleGUIHandler(BaseHTTPRequestHandler):
             elif path == "/api/state":
                 self._write_json({"state": SESSION.state(), "status": SESSION.status()})
             elif path == "/api/replay":
-                self._write_json({"replay": REPLAY.status(), "status": SESSION.status()})
+                status = SESSION.status()
+                replay = REPLAY.sync_from_current(SESSION, only_if_empty=True) if status["running"] else REPLAY.status()
+                self._write_json({"replay": replay, "status": status})
             elif path == "/api/logs":
                 self._write_json({"logs": SESSION.logs(), "status": SESSION.status()})
             elif path == "/api/final_score":
@@ -617,22 +661,34 @@ class ConsoleGUIHandler(BaseHTTPRequestHandler):
                 return
 
             if path == "/api/play":
-                REPLAY.clear()
                 player = payload.get("player", "").strip()
                 move = payload.get("move", "").strip()
                 if not player or not move:
                     raise ValueError("Both player and move are required.")
                 result = SESSION.send_command(f"play {player} {move}")
-                self._write_json({"result": result, "state": SESSION.state(), "status": SESSION.status(), "replay": REPLAY.status()})
+                state = SESSION.state()
+                replay = REPLAY.sync_from_current(SESSION)
+                self._write_json({
+                    "result": _redact_failed_play_result(result),
+                    "state": state,
+                    "status": SESSION.status(),
+                    "replay": replay,
+                })
                 return
 
             if path == "/api/genmove":
-                REPLAY.clear()
                 player = payload.get("player", "").strip()
                 if not player:
                     raise ValueError("Player is required.")
                 result = SESSION.send_command(f"genmove {player}")
-                self._write_json({"result": result, "state": SESSION.state(), "status": SESSION.status(), "replay": REPLAY.status()})
+                state = SESSION.state()
+                replay = REPLAY.sync_from_current(SESSION)
+                self._write_json({
+                    "result": result,
+                    "state": state,
+                    "status": SESSION.status(),
+                    "replay": replay,
+                })
                 return
 
             if path == "/api/clear":
@@ -663,6 +719,7 @@ class ConsoleGUIHandler(BaseHTTPRequestHandler):
                     step = int(payload.get("step", 0))
                 except (TypeError, ValueError) as exc:
                     raise ValueError("Replay step must be an integer.") from exc
+                REPLAY.sync_from_current(SESSION, only_if_empty=True)
                 state = REPLAY.replay_to_step(SESSION, step)
                 self._write_json({"state": state, "status": SESSION.status(), "replay": REPLAY.status()})
                 return

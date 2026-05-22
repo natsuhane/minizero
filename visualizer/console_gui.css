@@ -318,9 +318,13 @@ body[data-game-skin="hex"] [data-board-panel="white"] h2 {
     box-shadow: none;
 }
 
-.cell:hover {
+.cell.is-playable:hover {
     transform: none;
     background: rgba(255, 255, 255, 0.16);
+}
+
+.cell:not(.is-playable) {
+    cursor: default;
 }
 
 .square-board .cell::before,
@@ -399,12 +403,16 @@ body[data-game-skin="hex"] [data-board-panel="white"] h2 {
     fill: #d7d7d0;
     stroke: #aeb4b3;
     stroke-width: 0.8;
-    cursor: pointer;
+    cursor: default;
     transition: filter 140ms ease, stroke 140ms ease;
 }
 
-.hex-cell:hover,
-.hex-cell:focus-visible {
+.hex-cell.is-playable {
+    cursor: pointer;
+}
+
+.hex-cell.is-playable:hover,
+.hex-cell.is-playable:focus-visible {
     filter: brightness(1.08);
     stroke: #5d6462;
     outline: none;
